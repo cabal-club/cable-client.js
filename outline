@@ -1,0 +1,83 @@
+# cable-client verbs
+
+* post/join/leave
+* delete (post)
+* forgetMe (request delete all posts by local user)
+* drop/restore (subject: post, channel, user)
+* block/unblock (user)
+* hide/unhide (user)
+
+---
+
+# new indexes needed
+* pinned
+
+```
+!pinned!<hash> = 1
+```
+
+* dropped
+
+```
+!dropped!channel!<name> = 1
+!dropped!user!<pubkey> = 1 
+!dropped!post!<hash> = 1
+```
+
+* moderation
+    * action on user: hide/block/mod/admin/trust
+    * action on channel: archive/unarchive
+
+```
+!moderation!<user|channel>|<action>!<target> = <hash of post/mod>
+```
+
+vs
+
+```
+!mod-state!<user|ch>!<action>!<target>!<context>!<reason> = <hash of post/mod>
+```
+
+----
+
+* defined default window for requesting backlog
+* facilities for deleting messages
+    * delete all messages by <pubkey>
+    * issue deletes for all local user's messages
+* settings for ensuring a bounded storage, deleting oldest messages when bound is hit
+    * bound should have two sides:     action [ ---- ] rest
+    * the action side is the far end of the boundary. if we hit that we need to delete messages up until the `rest` side
+* chat message (causal) sorting
+* get currently joined channels
+* receive input and create the corresponding post type in cable-core
+* remove messages (separate from post/delete!) from local database and ignore them
+* trigger message events for currently joined channels
+    * new post
+    * post deleted
+    * new topic
+    * user join
+    * user left
+* focus/defocus channel
+* status level messages
+    * day changed
+    * topic changed
+    * slash command info
+* pagination of messages
+* on start setup requests for state:
+    * (for each joined channel) request messages for TIME_WINDOW
+    * (for each joined channel) request channel state for RELEVANT_CHANNELS
+    * request channel list 
+* renew limits of request channel time range
+* keep track of:
+    * channels that can be joined
+    * mentions
+    * read state (which messages have been read) in each channel
+* forward level() module preference to cable-core
+* moderation:
+    * keep track of current mods/admins
+    * keep track of currently hidden peers
+    * keep track of currently blocked peers
+
+**non-priorities**
+
+* one cable-client instance does not keep track of multiple cabals
