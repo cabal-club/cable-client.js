@@ -40,8 +40,8 @@ less important:
 * details.core.modKeys
 
 cabal.on
-* "info"
-* "end"
+* "info" (commands)
+* "end" (commands)
 * "update"
 * "channel-archive" / "channel-unarchive"
 * "private-message"

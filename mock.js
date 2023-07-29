@@ -15,7 +15,7 @@ class User {
 class CabalDetails extends EventEmitter {
   constructor() {
     super()
-    this.key = "asdasd"
+    this.key = "a-cabal-key"
     this.statusMessages = []
     this.chat = {"default": []}
     this.localUser = new User("123412341234", "mock-user")
@@ -60,6 +60,7 @@ class CabalDetails extends EventEmitter {
     })
   }
   processLine(line) {
+    if (line.length === 0) { return }
     if (line.startsWith("/")) {
       const delim = line.indexOf(" ")
       const command = line.slice(1, delim)
@@ -110,6 +111,7 @@ class Client {
   getMessages(opts, cb) { cb(this.details.getChat()) }
   focusChannel(ch) { this.details.focusChannel(ch) }
 
+  /* static methods */
   static getDatabaseVersion () { return "v1.3.37" }
   static getCabalDirectory() { return "/home/cblgh/code/cabal-club/grant-work-2022/cable-client/cabal-test" }
 
