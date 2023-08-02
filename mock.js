@@ -1,6 +1,9 @@
 /* translation layer between old cabal-client api and the new library cable-client. 
  * this allows cabal-cli to operate on `cable-client` without needing to change a cabal-cli instance :) */
 const EventEmitter = require("events").EventEmitter
+const CableClient = require("./cable-client.js")
+
+const cableclient = new CableClient()
 
 class User {
   constructor(key, name) {
@@ -18,7 +21,7 @@ class CabalDetails extends EventEmitter {
     this.key = "a-cabal-key"
     this.statusMessages = []
     this.chat = {"default": []}
-    this.localUser = new User("123412341234", "mock-user")
+    this.cc = cableclient
     this.showIds = false
     this.channels = ["default"]
     this.chindex = 0
@@ -26,8 +29,8 @@ class CabalDetails extends EventEmitter {
     this.core = { adminKeys: [], modKeys: [] }
   }
 
-  getChat() {
-    return this.chat[this.getCurrentChannel()]
+  getChat(cb) {
+    this.cc.getChat(this.getCurrentChannel(), {}, cb)
   }
 
   getTopic() { return this.topics[this.getCurrentChannel()] }
@@ -35,21 +38,23 @@ class CabalDetails extends EventEmitter {
     this.chindex = this.channels.indexOf(ch)
     this.emit("update", this)
   }
-  getLocalName() { return this.localUser.name }
+  getLocalName() { 
+    this.cc.localUser.name
+  }
   getChannels() { return this.channels }
   getCurrentChannel() { return this.channels[this.chindex] }
   isChannelPrivate(ch) { return false }
   getUsers() { 
-    const key = this.localUser.key
+    const key = this.cc.localUser.key
     const users = {}
-    users[key] = this.localUser
+    users[key] = this.cc.localUser
     return users
   }
-  getChannelMembers() { return [this.localUser] }
+  getChannelMembers() { return [this.cc.localUser] }
   addStatusMessage(m) { 
-    console.log(m);this.statusMessages.push(m) 
+    this.statusMessages.push(m) 
     this.chat[this.getCurrentChannel()].push({ 
-      key: this.localUser.key, 
+      key: this.cc.localUser.key, 
       value: { 
         timestamp: +(new Date()),
         type: "status",
@@ -66,6 +71,13 @@ class CabalDetails extends EventEmitter {
       const command = line.slice(1, delim)
       const value = line.slice(delim)
       switch (command) {
+        case "nick":
+        case "name":
+          this.cc.setName(value, () => {
+            this.emit("update", this)
+          })
+          return
+          break
         case "j":
         case "join":
           if (!this.channels.includes(value)) {
@@ -81,16 +93,18 @@ class CabalDetails extends EventEmitter {
       this.emit("update", this)
       return
     }
-    this.chat[this.getCurrentChannel()].push({ 
-      key: this.localUser.key, 
-      value: { 
-        timestamp: +(new Date()),
-        type: "chat/text",
-        content: {
-          text: line
-        }
-      }
-    })
+    // it was a chat message
+    this.cc.postText(line, this.getCurrentChannel())
+    // this.chat[this.getCurrentChannel()].push({ 
+    //   key: this.cc.localUser.key, 
+    //   value: { 
+    //     timestamp: +(new Date()),
+    //     type: "chat/text",
+    //     content: {
+    //       text: line
+    //     }
+    //   }
+    // })
     setTimeout(() => {
       this.emit("update", this)
     }, 40)
@@ -108,7 +122,7 @@ class Client {
 
   /* methods where we punt to cabal details */
   getUsers() { return this.details.getUsers() }
-  getMessages(opts, cb) { cb(this.details.getChat()) }
+  getMessages(opts, cb) { this.details.getChat(cb) }
   focusChannel(ch) { this.details.focusChannel(ch) }
 
   /* static methods */

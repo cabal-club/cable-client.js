@@ -11,12 +11,14 @@
 
 # new indexes needed
 * pinned
+    * defer this index 
 
 ```
 !pinned!<hash> = 1
 ```
 
 * dropped
+    * defer this index
 
 ```
 !dropped!channel!<name> = 1
@@ -27,6 +29,7 @@
 * moderation
     * action on user: hide/block/mod/admin/trust
     * action on channel: archive/unarchive
+    * defer this index
 
 ```
 !moderation!<user|channel>|<action>!<target> = <hash of post/mod>
