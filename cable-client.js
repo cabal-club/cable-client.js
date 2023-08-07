@@ -120,7 +120,14 @@ class CableClient extends EventEmitter {
     debug("get all channels")
   }
   getJoinedChannels() {
-    debug("get joined channels")
+    const joined = []
+    for (let [name, details] of this.channels) {
+      if (details.joined) {
+        joined.push(name)
+      }
+    }
+    debug("get joined channels %s", joined)
+    return joined.sort()
   }
   getCurrentChannel() {
     return this.currentChannel
@@ -135,6 +142,9 @@ class CableClient extends EventEmitter {
     this.core.join(channel)
   }
   leave(channel) {
+    if (!this.channels.has(channel)) { return }
+    this.channels.get(channel).leave()
+    this.core.leave(channel)
     debug("leave channel %s", channel)
   }
   postText(text, channel, cb) {

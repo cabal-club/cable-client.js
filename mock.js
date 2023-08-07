@@ -25,7 +25,6 @@ class CabalDetails extends EventEmitter {
     this.showIds = false
     this.channels = ["default"]
     this.chindex = 0
-    this.topics = {"default": "placeholder topic"}
     this.core = { adminKeys: [], modKeys: [] }
   }
 
@@ -43,7 +42,8 @@ class CabalDetails extends EventEmitter {
   getLocalName() { 
     return this.cc.localUser.name
   }
-  getChannels() { return this.channels }
+  getChannels() { return this.cc.getJoinedChannels() } // TODO (2023-08-07): not proper "getChannels" invocation
+  getJoinedChannels() { return this.cc.getJoinedChannels() }
   getCurrentChannel() { return this.cc.getCurrentChannel() }
   isChannelPrivate(ch) { return false }
   getUsers() { 
@@ -88,6 +88,15 @@ class CabalDetails extends EventEmitter {
           }
           this.currentChannel = value
           break
+        case "l":
+        case "leave":
+          if (this.channels.includes(value)) {
+            let channelIndex = this.channels.indexOf(value)
+            this.channels.splice(channelIndex, 1)
+          }
+          this.cc.leave(value)
+          // TODO (2023-08-07): add extra leave logic for picking current channel better
+          break
         case "topic":
           this.cc.setTopic(value, this.getCurrentChannel(), () => {
             this.emit("update", this)
@@ -123,7 +132,7 @@ class Client {
     this.cabalKeys = []
   }
 
-  getJoinedChannels() { return ["default"] }
+  getJoinedChannels() { return this.details.getJoinedChannels() }
 
   /* methods where we punt to cabal details */
   getUsers() { return this.details.getUsers() }
