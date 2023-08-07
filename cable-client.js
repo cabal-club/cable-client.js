@@ -155,6 +155,8 @@ class CableClient extends EventEmitter {
     })
   }
   addStatusMessage(statusMessage, channel) {
+    if (!this.channels.has(channel)) { return }
+    this.channels.get(channel).addVirtualMessage(statusMessage)
     debug("add status message %s to channel %s", statusMessage, channel)
   }
   // TODO (2023-08-07): emit event

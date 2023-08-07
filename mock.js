@@ -54,17 +54,7 @@ class CabalDetails extends EventEmitter {
   }
   getChannelMembers() { return [this.cc.localUser] }
   addStatusMessage(m) { 
-    this.statusMessages.push(m) 
-    this.chat[this.getCurrentChannel()].push({ 
-      key: this.cc.localUser.key, 
-      value: { 
-        timestamp: +(new Date()),
-        type: "status",
-        content: {
-          text: m.text
-        }
-      }
-    })
+    this.cc.addStatusMessage(m, this.getCurrentChannel()) 
   }
   processLine(line) {
     if (line.length === 0) { return }
