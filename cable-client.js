@@ -1,5 +1,7 @@
 const EventEmitter = require("events").EventEmitter
-const debug = require("debug")("cable-client")
+const debugParent = "cable-client"
+const debug = require("debug")(debugParent)
+const startDebug = (name) => { return require("debug")(`${debugParent}/${name}`) }
 const CableCore = require("cable-core/index.js").CableCore
 const ChannelDetails = require("./channel.js").ChannelDetails
 
@@ -31,38 +33,63 @@ class User {
 /* goals:
  * calls to cable client methods are synchronous as far as possible 
 */
+// TODO (2023-08-07): introduce some notion of a "ready" event, which is when cable-client has finished intializing
+// everything and is ready to have its functions called
 class CableClient extends EventEmitter {
   constructor() {
     super()
     debug("new cable client instance")
-    this._initialize()
     this.channels = new Map()
-    this._addChannel("default")
+    this._initialize()
+    this._addChannel("default", true)
+    this.currentChannel = "default"
     this.localUser = new User(this.core.kp.publicKey.toString("hex"), "")
   }
 
-  _addChannel(name) {
-    this.channels.set(name, new ChannelDetails(this.core.getChat.bind(this.core), name))
+  _addChannel(name, joined=false) {
+    debug("joined", joined)
+    if (this.channels.has(name)) { return }
+    const channel = new ChannelDetails(this.core.getChat.bind(this.core), name)
+    if (joined) { channel.join() }
+    this.channels.set(name, channel)
   }
 
   create() {
     debug("create")
   }
+
+  // TODO (2023-08-07): add to ready queu
   _initialize() {
-    debug("_initialize")
+    const log = startDebug("_initialize")
     this.focus("default")
     this.core = new CableCore()
-    // TODO (2023-08-02): get joined channels and populate this.channels
+    // get joined channels and populate this.channels
+    this.core.getJoinedChannels((err, channels) => {
+      if (err) { 
+        log("had err %s when getting joined channels from core", err)
+        return 
+      }
+      channels.forEach(ch => this._addChannel(channel, true))
+    })
   }
   _initializeProtocol() {
     debug("initialize protocol")
   }
   focus(channel) {
+    if (!this.channels.has(channel)) { return }
+    this.channels.get(this.currentChannel).unfocus()
+    this.channels.get(channel).focus()
+    this.currentChannel = channel
     debug("focus channel %s", channel)
+    debug(this.channels)
   }
 
-  channelInformation(channel) {
-    debug("channel information %s", channel)
+  // get channel information
+  getInformation(channel) {
+    if (!this.channels.has(channel)) { return null }
+    const info = this.channels.get(channel).getInfo()
+    debug("channel information %s", info)
+    return info
   }
   _causalSort() {
     debug("causal sort")
@@ -82,7 +109,9 @@ class CableClient extends EventEmitter {
     return this.localUser
   }
   getTopic(channel) {
+    if (!this.channels.has(channel)) { return "" }
     debug("get topic for %s", channel)
+    return this.channels.get(channel).topic
   }
   getUsers() {
     debug("get users")
@@ -94,17 +123,22 @@ class CableClient extends EventEmitter {
     debug("get joined channels")
   }
   getCurrentChannel() {
+    return this.currentChannel
     debug("get current channel")
   }
 
   /* post producing methods */
-  join(channel) {
+  join(channel, focus=true) {
     debug("join channel %s", channel)
+    this._addChannel(channel, true)
+    if (focus) { this.focus(channel) }
+    this.core.join(channel)
   }
   leave(channel) {
     debug("leave channel %s", channel)
   }
   postText(text, channel, cb) {
+    if (!cb) { cb = noop }
     debug("post %s to channel %s", text, channel)
     this.core.postText(channel, text, () => {
       if (cb) { cb() }
@@ -113,8 +147,14 @@ class CableClient extends EventEmitter {
   addStatusMessage(statusMessage, channel) {
     debug("add status message %s to channel %s", statusMessage, channel)
   }
-  setTopic(topic, channel) {
-    debug("set topic %s for channel %s", topic, channel)
+  // TODO (2023-08-07): emit event
+  setTopic(topic, channel, cb) {
+    if (!cb) { cb = noop }
+    this.core.setTopic(channel, topic, () => {
+      debug("set topic %s for channel %s", topic, channel)
+      this.channels.get(channel).topic = topic
+      cb()
+    })
   }
   // TODO (2023-08-01): change to core.setName
   setName(name, done) {

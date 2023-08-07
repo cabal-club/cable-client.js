@@ -33,16 +33,18 @@ class CabalDetails extends EventEmitter {
     this.cc.getChat(this.getCurrentChannel(), {}, cb)
   }
 
-  getTopic() { return this.topics[this.getCurrentChannel()] }
+  getTopic() { return this.cc.getTopic(this.getCurrentChannel()) }
   focusChannel(ch) {
     this.chindex = this.channels.indexOf(ch)
     this.emit("update", this)
+    this.cc.focus(ch)
+    this.cc.getInformation(ch)
   }
   getLocalName() { 
-    this.cc.localUser.name
+    return this.cc.localUser.name
   }
   getChannels() { return this.channels }
-  getCurrentChannel() { return this.channels[this.chindex] }
+  getCurrentChannel() { return this.cc.getCurrentChannel() }
   isChannelPrivate(ch) { return false }
   getUsers() { 
     const key = this.cc.localUser.key
@@ -69,7 +71,7 @@ class CabalDetails extends EventEmitter {
     if (line.startsWith("/")) {
       const delim = line.indexOf(" ")
       const command = line.slice(1, delim)
-      const value = line.slice(delim)
+      const value = line.slice(delim).trim()
       switch (command) {
         case "nick":
         case "name":
@@ -80,14 +82,16 @@ class CabalDetails extends EventEmitter {
           break
         case "j":
         case "join":
+          this.cc.join(value)
           if (!this.channels.includes(value)) {
             this.channels.push(value)
-            this.chat[value] = []
           }
           this.currentChannel = value
           break
         case "topic":
-          this.topics[this.getCurrentChannel()] = value
+          this.cc.setTopic(value, this.getCurrentChannel(), () => {
+            this.emit("update", this)
+          })
           break
       }
       this.emit("update", this)
@@ -118,6 +122,7 @@ class Client {
     this.cabals = []
     this.cabalKeys = []
   }
+
   getJoinedChannels() { return ["default"] }
 
   /* methods where we punt to cabal details */
