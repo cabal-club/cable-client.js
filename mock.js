@@ -24,7 +24,6 @@ class CabalDetails extends EventEmitter {
     this.cc = cableclient
     this.showIds = false
     this.channels = ["default"]
-    this.chindex = 0
     this.core = { adminKeys: [], modKeys: [] }
   }
 
@@ -34,7 +33,6 @@ class CabalDetails extends EventEmitter {
 
   getTopic() { return this.cc.getTopic(this.getCurrentChannel()) }
   focusChannel(ch) {
-    this.chindex = this.channels.indexOf(ch)
     this.emit("update", this)
     this.cc.focus(ch)
     this.cc.getInformation(ch)
@@ -42,7 +40,11 @@ class CabalDetails extends EventEmitter {
   getLocalName() { 
     return this.cc.localUser.name
   }
-  getChannels() { return this.cc.getJoinedChannels() } // TODO (2023-08-07): not proper "getChannels" invocation
+  getChannels(opts) { 
+    if (!opts) { opts = {} }
+    if (opts.onlyJoined) { return this.getJoinedChannels() }
+    return this.cc.getAllChannels() 
+  }
   getJoinedChannels() { return this.cc.getJoinedChannels() }
   getCurrentChannel() { return this.cc.getCurrentChannel() }
   isChannelPrivate(ch) { return false }
@@ -80,12 +82,12 @@ class CabalDetails extends EventEmitter {
           break
         case "l":
         case "leave":
+        // TODO (2023-08-07): add extra leave logic for picking current channel better
           if (this.channels.includes(value)) {
             let channelIndex = this.channels.indexOf(value)
             this.channels.splice(channelIndex, 1)
           }
           this.cc.leave(value)
-          // TODO (2023-08-07): add extra leave logic for picking current channel better
           break
         case "topic":
           this.cc.setTopic(value, this.getCurrentChannel(), () => {
@@ -144,7 +146,7 @@ class Client {
 
   getCabalKeys() { return [this.details.key] }
 
-  /* unimplemented/touched methods */
+  /* unimplemented/untouched methods */
   getNumberUnreadMessages() { return 0 }
   getMentions() { return [] }
   markChannelRead(ch) { }

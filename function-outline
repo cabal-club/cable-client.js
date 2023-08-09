@@ -11,6 +11,12 @@ synonyms:
     2. dropMany(getHashes(msgs), { persist: false })
 
 # protocol related
+cable-core should facilitate everything peer related. cable-client has opinions on what parameters are set for requests, but core should manage and notify new peers.
+
+either cable-core keeps track of already set parameters, and issues requests to new peers when we encounter them
+
+or cable-client handles the request issuing, while cable-core enables sending request to specific peers
+
 initialize()
 * for each new peer we get in contact with (?):
     * requestChannelList
