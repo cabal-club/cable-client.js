@@ -60,11 +60,14 @@ class CableClient extends EventEmitter {
       UNJOINED: new replicationPolicy.UnjoinedPolicy()
     }
     this.channels = new Map()
+    // maps each user's public key to an instance of the User class
+    this.users = new Map()
     this._initialize()
     this._initializeProtocol()
     this._addChannel("default", true)
     this.currentChannel = "default"
     this.localUser = new User(this.core.kp.publicKey.toString("hex"), "")
+    this.users.set(this.localUser.key, this.localUser)
   }
 
   _addChannel(name, join=false) {
@@ -90,7 +93,26 @@ class CableClient extends EventEmitter {
         log("had err %s when getting joined channels from core", err)
         return 
       }
-      channels.forEach(ch => this._addChannel(channel, true))
+      channels.forEach(ch => {
+        this._addChannel(channel, true)
+        // TODO (2023-08-09): pipeline a set of promises to resolve
+        // when all promises are resolved, tick one less on the ready queue
+        this.core.getTopic(ch, (err, topic) => {
+          if (err) { return }
+          this.channels.get(channel).topic = topic
+        })
+
+        this.core.getUsersInChannel(ch, (err, users) => {
+          if (err) { return }
+          // TODO (2023-08-09): change structure of data returned by core?
+          for (let userKey of users.keys()) {
+            let name = users.get(userKey)
+            if (name.length === 64) { name = "" }
+            const u = new User(userKey, name)
+            this.users.set(userKey, u)
+          }
+        })
+      })
     })
   }
 
