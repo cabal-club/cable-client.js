@@ -5,6 +5,7 @@ const startDebug = (name) => { return require("debug")(`${debugParent}/${name}`)
 const CableCore = require("cable-core/index.js").CableCore
 const ChannelDetails = require("./channel.js").ChannelDetails
 const replicationPolicy = require("./policy.js")
+const Network = require("./network.js").Network
 
 const DEFAULT_TTL = 3
 const DEFAULT_CHANNEL_LIST_LIMIT = 100
@@ -62,12 +63,14 @@ class CableClient extends EventEmitter {
     this.channels = new Map()
     // maps each user's public key to an instance of the User class
     this.users = new Map()
-    this._initialize()
-    this._initializeProtocol()
-    this._addChannel("default", true)
+    this._initializeClient()
+    this.join("default")
     this.currentChannel = "default"
     this.localUser = new User(this.core.kp.publicKey.toString("hex"), "")
     this.users.set(this.localUser.key, this.localUser)
+    setTimeout(() => {
+      this._initializeProtocol()
+    }, 150)
   }
 
   _addChannel(name, join=false) {
@@ -83,10 +86,10 @@ class CableClient extends EventEmitter {
   }
 
   // TODO (2023-08-07): add to ready queue
-  _initialize() {
+  _initializeClient() {
     const log = startDebug("_initialize")
     this.focus("default")
-    this.core = new CableCore()
+    this.core = new CableCore({ network: Network })
     // get joined channels and populate this.channels
     this.core.getJoinedChannels((err, channels) => {
       if (err) { 
@@ -119,15 +122,19 @@ class CableClient extends EventEmitter {
   // handles all initial cable-specific protocol bootstrapping
   _initializeProtocol() {
     const log = startDebug("initialize-protocol")
+    log("get joined channels")
     // operate on joined channels
     this.core.getJoinedChannels((err, channels) => {
       if (err) { 
         log("had err %s when getting joined channels from core", err)
         return 
       }
+      log("joined channels: %s", channels)
       const policy = this.policies.JOINED
       channels.forEach(ch => {
-        const postsReq = this.core.requestPosts(ch, policy.timeWindow, 0, DEFAULT_TTL, policy.LIMIT)
+        log("request posts for %s", ch)
+        const postsReq = this.core.requestPosts(ch, policy.timeWindow, 0, DEFAULT_TTL, policy.limit)
+        log(postsReq)
       })
     })
     // TODO (2023-08-09): operate on unjoined channels
@@ -139,10 +146,12 @@ class CableClient extends EventEmitter {
         
         // request posts for unjoined channels
         if (this.channels.has(ch) && !this.channels.get(ch).joined) {
-          const postsReq = this.core.requestPosts(ch, policy.timeWindow, 0, DEFAULT_TTL, policy.LIMIT)
+          const postsReq = this.core.requestPosts(ch, policy.timeWindow, 0, DEFAULT_TTL, policy.limit)
+          log("request posts for %s", ch)
         }
         // for all channels, request channel state
         const stateReq = this.core.requestState(ch, DEFAULT_TTL, 1)
+        log("request state for %s", ch)
       })
     })
     // TODO (2023-08-09): operate on dropped channels
@@ -150,9 +159,11 @@ class CableClient extends EventEmitter {
     // request channel list, in case new channels have been created while offline, keep intermittently requesting for
     // new channels as well
     const channelsReq = this.core.requestChannels(DEFAULT_TTL, 0, DEFAULT_CHANNEL_LIST_LIMIT)
+    log("request channels")
     // TODO (2023-08-09): save this timer in case we need to cancel it
     setInterval(() => {
       const channelsReq = this.core.requestChannels(DEFAULT_TTL, 0, DEFAULT_CHANNEL_LIST_LIMIT)
+      log("periodic request channels")
     }, CHANNEL_LIST_RENEWAL_INTERVAL)
   }
 
@@ -165,12 +176,14 @@ class CableClient extends EventEmitter {
     // despite not having joined the channel, we make sure to requests some posts to make sure it has some backlog if we
     // do decide to join it
     const policy = this.policies.UNJOINED
-    const postsReq = this.core.requestPosts(ch, policy.timeWindow, 0, DEFAULT_TTL, policy.LIMIT)
+    const postsReq = this.core.requestPosts(ch, policy.timeWindow, 0, DEFAULT_TTL, policy.limit)
   }
 
   focus(channel) {
     if (!this.channels.has(channel)) { return }
-    this.channels.get(this.currentChannel).unfocus()
+    if (this.channels.get(this.currentChannel)) {
+      this.channels.get(this.currentChannel).unfocus()
+    }
     this.channels.get(channel).focus()
     this.currentChannel = channel
     debug("focus channel %s", channel)
