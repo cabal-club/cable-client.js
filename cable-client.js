@@ -49,6 +49,11 @@ class User {
 // TODO (2023-08-09): replication optimization: when we leave a channel, issue a new time range request with replication policy for unjoined channels
 //
 // TODO (2023-08-09): receive event from core when a time range request has reached end of life, enabling renewal of the request?
+
+function timeWindowFromOffset(offset) {
+  return +(new Date()) - offset
+}
+
 class CableClient extends EventEmitter {
   constructor(opts) {
     super()
@@ -132,8 +137,8 @@ class CableClient extends EventEmitter {
       log("joined channels: %s", channels)
       const policy = this.policies.JOINED
       channels.forEach(ch => {
-        log("request posts for %s", ch)
-        const postsReq = this.core.requestPosts(ch, policy.timeWindow, 0, DEFAULT_TTL, policy.limit)
+        log("request posts for joined channel %s", ch)
+        const postsReq = this.core.requestPosts(ch, timeWindowFromOffset(policy.windowSize), 0, DEFAULT_TTL, policy.limit)
         log(postsReq)
       })
     })
@@ -146,8 +151,8 @@ class CableClient extends EventEmitter {
         
         // request posts for unjoined channels
         if (this.channels.has(ch) && !this.channels.get(ch).joined) {
-          const postsReq = this.core.requestPosts(ch, policy.timeWindow, 0, DEFAULT_TTL, policy.limit)
-          log("request posts for %s", ch)
+          const postsReq = this.core.requestPosts(ch, timeWindowFromOffset(policy.windowSize), 0, DEFAULT_TTL, policy.limit)
+          log("request posts for unjoined channel %s", ch)
         }
         // for all channels, request channel state
         const stateReq = this.core.requestState(ch, DEFAULT_TTL, 1)
@@ -175,8 +180,8 @@ class CableClient extends EventEmitter {
     const stateReq = this.core.requestState(ch, DEFAULT_TTL, 1)
     // despite not having joined the channel, we make sure to requests some posts to make sure it has some backlog if we
     // do decide to join it
-    const policy = this.policies.UNJOINED
-    const postsReq = this.core.requestPosts(ch, policy.timeWindow, 0, DEFAULT_TTL, policy.limit)
+    const policy = this.policies.UNJOINED 
+    const postsReq = this.core.requestPosts(ch, timeWindowFromOffset(policy.windowSize), 0, DEFAULT_TTL, policy.limit)
   }
 
   focus(channel) {
@@ -253,7 +258,7 @@ class CableClient extends EventEmitter {
     this._addChannel(channel, true)
     if (focus) { this.focus(channel) }
     this.core.join(channel)
-    const postsReq = this.core.requestPosts(channel, this.policies.JOINED.timeWindow, 0, DEFAULT_TTL, this.policies.JOINED.limit)
+    const postsReq = this.core.requestPosts(channel, timeWindowFromOffset(this.policies.JOINED.windowSize), 0, DEFAULT_TTL, this.policies.JOINED.limit)
   }
 
   leave(channel) {

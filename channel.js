@@ -147,7 +147,6 @@ class ChannelDetailsBase {
          text: ''
      }
      */
-    console.log("add virt message", msg)
     msg = {
       publicKey: this.name,
       // TODO (2023-08-01): tweak to cable (do we want to use mono-timestamp like this?)
@@ -185,7 +184,7 @@ class ChannelDetails extends ChannelDetailsBase {
     opts = opts || {}
     let start = opts.tsNewerThan || +(new Date) - TWO_DAYS_MS 
     let end = opts.tsOlderThan || 0
-    let limit = 500 || opts.limit
+    let limit = opts.limit || 500
     // return new Promise((resolve, reject) => {
     this.getChat(this.name, start, end, limit, (err, msgs) => {
       if (err) { console.error("err", err); return cb([]); }
@@ -197,7 +196,6 @@ class ChannelDetails extends ChannelDetailsBase {
         const dayTimestamp = msgTime - (msgTime % (24 * 60 * 60 * 1000))
         if (!this.datesSeen.has(dayTimestamp)) {
           this.datesSeen.add(dayTimestamp)
-          // TODO (2023-08-01): tweak msg format to cable
           this.addVirtualMessage({
             publicKey: this.name,
             postHash: "",
