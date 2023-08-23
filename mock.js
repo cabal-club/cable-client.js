@@ -22,6 +22,9 @@ class CabalDetails extends EventEmitter {
     this.statusMessages = []
     this.chat = {"default": []}
     this.cc = cableclient
+    this.cc.on("update", () => {
+      this.emit("update", this)
+    })
     this.showIds = false
     this.channels = ["default"]
     this.core = { adminKeys: [], modKeys: [] }
@@ -49,10 +52,12 @@ class CabalDetails extends EventEmitter {
   getCurrentChannel() { return this.cc.getCurrentChannel() }
   isChannelPrivate(ch) { return false }
   getUsers() { 
-    const key = this.cc.localUser.key
-    const users = {}
-    users[key] = this.cc.localUser
-    return users
+    const usersMap = this.cc.getUsers()
+    const obj = {}
+    for (const pair of usersMap) {
+      obj[pair[0]] = pair[1]
+    }
+    return obj
   }
   getChannelMembers() { return [this.cc.localUser] }
   addStatusMessage(m) { 
