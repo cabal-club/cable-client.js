@@ -15,13 +15,15 @@ class User {
   isHidden() { return false }
 }
 
+// TODO (2023-08-23): halt calls of cc's methods until cc.ready has fired
 class CabalDetails extends EventEmitter {
-  constructor() {
+  constructor(done) {
     super()
     this.key = "a-cabal-key"
     this.statusMessages = []
     this.chat = {"default": []}
     this.cc = cableclient
+    this.cc.ready(() => { console.log("donez"); done() })
     this.cc.on("update", () => {
       this.emit("update", this)
     })
@@ -122,9 +124,16 @@ class CabalDetails extends EventEmitter {
   publishMessage() { }
 }
 
+// TODO (2023-08-23): decomplicate the ready queuing lol
 class Client {
   constructor() {
-    this.details = new CabalDetails()
+    this._ready = false
+    this._start = () => {
+      this._ready = true
+      for (let fn of this.queue) { fn() } 
+    }
+    this.queue = []
+    this.details = new CabalDetails(this._start)
     this.cabals = []
     this.cabalKeys = []
   }
@@ -138,12 +147,19 @@ class Client {
 
   /* static methods */
   static getDatabaseVersion () { return "v1.3.37" }
+  // TODO (2023-08-23): don't hardcode this :))
   static getCabalDirectory() { return "/home/cblgh/code/cabal-club/grant-work-2022/cable-client/cabal-test" }
 
   /* variations of the same: getting the cabal instance */
   // for cable-client, we'll only operate on a single cabal 
-  cabalToDetails () { return this.getCurrentCabal() }
-  createCabal() { return this.details }
+  cabalToDetails () { return this.details }
+  createCabal() {
+    return (new Promise((res, rej) => {
+      this.queue.push(() => {
+        return res(this.details)
+      })
+    }))
+  }
   getDetails (key) { return this.details }
   getCurrentCabal() { return this.details }
   focusCabal() { return this.details }
