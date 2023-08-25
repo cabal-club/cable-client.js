@@ -3,7 +3,6 @@
 const EventEmitter = require("events").EventEmitter
 const CableClient = require("./cable-client.js")
 
-const cableclient = new CableClient()
 
 class User {
   constructor(key, name) {
@@ -17,18 +16,31 @@ class User {
 
 // TODO (2023-08-23): halt calls of cc's methods until cc.ready has fired
 class CabalDetails extends EventEmitter {
-  constructor(done) {
+  constructor(opts, done) {
     super()
     this.key = "a-cabal-key"
     this.statusMessages = []
     this.chat = {"default": []}
-    this.cc = cableclient
-    this.cc.ready(() => { console.log("donez"); done() })
+    this.cc = new CableClient(opts)
+    this.cc.ready(() => { console.error("cc ready received by mock"); done() })
     this.cc.on("update", () => {
       this.emit("update", this)
     })
+    // events for slash-command output
+    this.cc.on("info", (payload) => {
+      this.emit("info", payload)
+      this.emit("update")
+    })
+    this.cc.on("error", (err) => {
+      this.emit("error", err)
+      this.emit("update")
+    })
+    this.cc.on("end", (obj) => {
+      this.emit("end", obj)
+      this.emit("update")
+    })
     this.showIds = false
-    this.channels = ["default"]
+    this.showHashes = true
     this.core = { adminKeys: [], modKeys: [] }
   }
 
@@ -62,10 +74,12 @@ class CabalDetails extends EventEmitter {
     return obj
   }
   getChannelMembers() { return [this.cc.localUser] }
-  addStatusMessage(m) { 
+  addStatusMessage(m) {
     this.cc.addStatusMessage(m, this.getCurrentChannel()) 
   }
-  processLine(line) {
+  processLine(line, cb) {
+    this.cc.processLine(line, cb)
+    /*
     if (line.length === 0) { return }
     if (line.startsWith("/")) {
       const delim = line.indexOf(" ")
@@ -81,20 +95,16 @@ class CabalDetails extends EventEmitter {
           break
         case "j":
         case "join":
-          this.cc.join(value)
-          if (!this.channels.includes(value)) {
-            this.channels.push(value)
+          if (!this.cc.getJoinedChannels().includes(value)) {
+            this.cc.join(value)
           }
-          this.currentChannel = value
           break
         case "l":
         case "leave":
         // TODO (2023-08-07): add extra leave logic for picking current channel better
-          if (this.channels.includes(value)) {
-            let channelIndex = this.channels.indexOf(value)
-            this.channels.splice(channelIndex, 1)
+          if (this.cc.getJoinedChannels().includes(value)) {
+            this.cc.leave(value)
           }
-          this.cc.leave(value)
           break
         case "topic":
           this.cc.setTopic(value, this.getCurrentChannel(), () => {
@@ -120,20 +130,21 @@ class CabalDetails extends EventEmitter {
     setTimeout(() => {
       this.emit("update", this)
     }, 40)
+    */
   }
   publishMessage() { }
 }
 
 // TODO (2023-08-23): decomplicate the ready queuing lol
 class Client {
-  constructor() {
+  constructor(opts) {
     this._ready = false
     this._start = () => {
       this._ready = true
       for (let fn of this.queue) { fn() } 
     }
     this.queue = []
-    this.details = new CabalDetails(this._start)
+    this.details = new CabalDetails(opts, this._start)
     this.cabals = []
     this.cabalKeys = []
   }
@@ -166,6 +177,9 @@ class Client {
   _getCabalByKey(key) { return this.details }
 
   getCabalKeys() { return [this.details.key] }
+  addStatusMessage(m) {
+    this.details.addStatusMessage(m)
+  }
 
   /* unimplemented/untouched methods */
   getNumberUnreadMessages() { return 0 }

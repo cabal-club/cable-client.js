@@ -7,6 +7,9 @@ const EventsManager = require("cable-core/index.js").EventsManager
 const ChannelDetails = require("./channel.js").ChannelDetails
 const replicationPolicy = require("./policy.js")
 const Network = require("./network.js").Network
+const defaultCommands = require("./commands.js")
+const timestamp = require("monotonic-timestamp")
+const b4a = require("b4a")
 
 const DEFAULT_TTL = 3
 const DEFAULT_CHANNEL_LIST_LIMIT = 100
@@ -66,6 +69,40 @@ let queue = []
 class CableClient extends EventEmitter {
   constructor(opts) {
     super()
+
+    this.commands = opts.commands || {}
+    this.commands = Object.assign({}, this.commands, defaultCommands)
+    this.aliases = {}
+    // populate command aliases
+    Object.keys(this.commands).forEach(key => {
+      ;(this.commands[key].alias || []).forEach(alias => {
+        this.aliases[alias] = key
+      })
+    })
+    /* _res takes a command (cabal event type, a string) and returns an object with the functions: info, error, end */
+    this._res = function (command) { // command: the type of event emitting information (e.g. channel-join, new-message, topic etc)
+      let seq = 0 // tracks # of sent info messages
+      const uid = `${timestamp()}` // id uniquely identifying this stream of events
+      return {
+        info: (msg, obj) => {
+          let payload = (typeof msg === "string") ? { text: msg } : { ...msg }
+          if (typeof obj !== "undefined") payload = { ...payload, ...obj }
+          payload["meta"] = { uid, command, seq: seq++ }
+
+          this.emit('info', payload)
+        },
+        error: (err) => {
+          this.emit('error', err)
+        },
+        end: () => {
+          // emits an event to indicate the command has finished 
+          this.emit('end', { uid, command, seq })
+        }
+      }
+    }
+
+
+
     tickPending()
     if (!opts) { opts = {} }
     this.events = new EventsManager()
@@ -108,6 +145,36 @@ class CableClient extends EventEmitter {
       return cb()
     }
     queue.push(cb)
+  }
+
+  /**
+   * Interpret a line of input from the user.
+   * This may involve running a command or publishing a message to the current
+   * channel.
+   * @param {string} [line] input from the user
+   * @param {function} [cb] callback called when the input is processed
+   */
+  processLine (line, cb) {
+    debug("processLine %s", line)
+    if (!cb) { cb = noop }
+    var m = /^\/\s*(\w+)(?:\s+(.*))?/.exec(line.trimRight())
+    if (m && this.commands[m[1]] && typeof this.commands[m[1]].call === 'function') {
+      this.commands[m[1]].call(this, this._res(m[1]), m[2])
+    } else if (m && this.aliases[m[1]]) {
+      var key = this.aliases[m[1]]
+      if (this.commands[key]) {
+        this.commands[key].call(this, this._res(key), m[2])
+      } else {
+        this._res("warn").info(`command for alias ${m[1]} => ${key} not found`)
+        cb()
+      }
+    } else if (m) {
+      this._res("warn").info(`${m[1]} is not a command. type /help for commands`)
+    } else if (this.chname !== '!status' && /\S/.test(line)) { // disallow typing to !status
+      this.postText(line.trimRight(), this.currentChannel, cb)
+    } else {
+      debug("processLine: no matches")
+    }
   }
 
   _addChannel(name, join=false) {
@@ -175,14 +242,16 @@ class CableClient extends EventEmitter {
     // post/text
     this.events.register("chat", this.core, "chat/add", ({ channel, hash, post, publicKey }) => {
       this._addUserIfNew(publicKey)
+      this._addChannel(channel)
       log("chat/add: new post in %s %O (hash %s) by %s", channel, post, hash, publicKey)
       this.emit("update")
     })
 
     // post/delete
     // TODO (2023-08-23): add toggle to show post hashes in cli + command to delete by hash
-    this.events.register("chat", this.core, "chat/remove", ({ channel, topic, publicKey }) => {
+    this.events.register("chat", this.core, "chat/remove", ({ channel, hash, topic, publicKey }) => {
       this._addUserIfNew(publicKey)
+      this._addChannel(channel)
       log("chat/remove: (TODO in cli view) %s removed post with hash %s from channel", publicKey, hash, channel)
       this.emit("update")
     })
@@ -190,10 +259,7 @@ class CableClient extends EventEmitter {
     // post/topic
     this.events.register("channels", this.core, "channels/topic", ({ channel, topic, publicKey }) => {
       this._addUserIfNew(publicKey)
-      if (!this.channels.has(channel)) { 
-        log("channels/topic: can't find channel %s", channel)
-        return 
-      }
+      this._addChannel(channel)
       this.channels.get(channel).topic = topic
       log("channels/topic: %s topic set to %s by %s", channel, topic, publicKey)
       this.emit("update")
@@ -202,10 +268,7 @@ class CableClient extends EventEmitter {
     // post/join
     this.events.register("channels", this.core, "channels/join", ({ channel, publicKey }) => {
       this._addUserIfNew(publicKey)
-      if (!this.channels.has(channel)) { 
-        log("channels/join: can't find channel %s", channel)
-        return 
-      }
+      this._addChannel(channel)
       this.channels.get(channel).addMember(publicKey)
       log("channels/join: %s joined by %s", channel, publicKey)
     })
@@ -213,12 +276,16 @@ class CableClient extends EventEmitter {
     // post/leave
     this.events.register("channels", this.core, "channels/leave", ({ channel, publicKey }) => {
       this._addUserIfNew(publicKey)
-      if (!this.channels.has(channel)) { 
-        log("channels/leave: can't find channel %s", channel)
-        return 
-      }
+      this._addChannel(channel)
       this.channels.get(channel).removeMember(publicKey)
       log("channels/leave: %s left by %s", channel, publicKey)
+    })
+    
+    // channel list response
+    this.events.register("channels", this.core, "channels/add", ({ channels }) => {
+      channels.forEach(channel => { this._addChannel(channel) })
+      log("channels/add: channel list response replied with %O", channels)
+      this.emit("update")
     })
 
     // post/info key:name
@@ -387,6 +454,7 @@ class CableClient extends EventEmitter {
     if (!cb) { cb = noop }
     debug("post %s to channel %s", text, channel)
     this.core.postText(channel, text, () => {
+      this.emit("update")
       if (cb) { cb() }
     })
   }
@@ -400,6 +468,7 @@ class CableClient extends EventEmitter {
     if (!cb) { cb = noop }
     this.core.setTopic(channel, topic, () => {
       debug("set topic %s for channel %s", topic, channel)
+      if (!this.channels.has(channel)) { this._addChannel(channel) }
       this.channels.get(channel).topic = topic
       cb()
     })
@@ -408,14 +477,20 @@ class CableClient extends EventEmitter {
   setName(name, done) {
     if (!done) { done = noop }
     debug("set name to %s", name)
-    this.core.setNick(name, () => {
+    this.core.setNick(name, (err) => {
+      if (err) {
+        return done(err)
+      }
       this.localUser.name = name
+			done()
     })
   }
 
   /* storage management related methods (delete also produces posts) */
-  deleteSingle(hash) {
+  deleteSingle(hash, done) {
+    if (!done) { done = noop }
     debug("request single delete for hash %s", hash)
+    this.core.del(b4a.from(hash, "hex"), done)
   }
   deleteMany(hashes) {
     debug("request many deletes for hashes %s", hashes.join("\n"))

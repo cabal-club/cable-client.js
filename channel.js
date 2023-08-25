@@ -191,6 +191,7 @@ class ChannelDetails extends ChannelDetailsBase {
       const reversed = []
       for (let i = msgs.length - 1; i >= 0; --i) {
         const msg = msgs[i]
+        if (msg === null) { continue }
         reversed.push(msg)
         const msgTime = msg.timestamp
         const dayTimestamp = msgTime - (msgTime % (24 * 60 * 60 * 1000))
@@ -200,7 +201,8 @@ class ChannelDetails extends ChannelDetailsBase {
             publicKey: this.name,
             postHash: "",
             timestamp: dayTimestamp,
-            postType: postTypes.STATUS_DATE_CHANGED /*'status/date-changed' */
+            postType: postTypes.STATUS_DATE_CHANGED /*'status/date-changed' */,
+            text: ""
           })
         }
       }
