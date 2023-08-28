@@ -384,8 +384,76 @@ class CableClient extends EventEmitter {
     debug("channel information %s", info)
     return info
   }
-  _causalSort() {
-    debug("causal sort")
+
+  _causalSort(posts, cb) {
+    const log = startDebug("causalSort")
+    const postsMap = new Map()
+    posts.forEach(post => { postsMap.set(post.postHash, post) })
+
+    function popNext(stack) {
+      let best = stack[0], besti = 0
+      for (let i = 1; i < stack.length; i++) {
+        let s = stack[i]
+        if (s.timestamp < best.timestamp) {
+          besti = i
+          best = s
+        }
+      }
+      // swap the found element to the end of the stack and pop it
+      // this avoids an in-place splice that would copy or re-allocate the array
+      let tmp = stack[stack.length-1]
+      stack[besti] = tmp
+      stack.pop()
+      return best
+    }
+
+    this.core.getReverseLinks(postsMap.keys(), (err, rlinks) => {
+      log("reverse links", rlinks)
+      let stack = []
+      // initialize the stack with posts that have no available links
+      // i.e. get the heads of the current interval
+      for (let post of postsMap.values()) {
+        let count = 0
+        for (let link of post.links ?? []) {
+          count += postsMap.has(link) ? 1 : 0
+          if (count > 0) break
+        }
+        if (count === 0) stack.push(post)
+      }
+
+      let seen = new Set()
+      let results = []
+      loop: while (stack.length > 0) {
+        let post = popNext(stack)
+        for (let link of post.links ?? []) {
+          // first condition: we have the post locally which is referred to by the link id
+          // second condition: we have not processed it yet
+          if (postsMap.has(link) && !seen.has(link)) {
+            // the post links to an available post that has not yet been seen,
+            // so it's too early to yield this post.
+            // don't worry, it will get pushed to the stack again when the
+            // linked post appears on the stack because post is reverse linked.
+            continue loop
+          }
+        }
+        // we've already added this post to the results, next pls!
+        if (seen.has(post.postHash)) continue
+        seen.add(post.postHash)
+        // add to results / output we'll return at the end
+        results.push(post)
+        // for each link that references the current post
+        for (let link of rlinks.get(post.postHash) ?? []) {
+          // we've already processed a particular link; skip it
+          if (seen.has(link)) continue
+          // get post from database using the link hash (TODO?)
+          let post = postsMap.get(link)
+          // push new post to the working stack if we have the data referred by the link hash
+          if (post !== undefined) stack.push(post)
+        }
+      }
+      log("results", results)
+      cb(results)
+    })
   }
 
   /* getting information */
@@ -395,7 +463,7 @@ class CableClient extends EventEmitter {
     if (!this.channels.has(channel)) {
       return cb([])
     }
-    this.channels.get(channel).getPage(opts, cb)
+    this.channels.get(channel).getPage(opts, this._causalSort.bind(this), cb)
   }
   getLocalUser() {
     debug("get local user")

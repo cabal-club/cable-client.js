@@ -1,6 +1,7 @@
 const timestamp = require('monotonic-timestamp')
 const { stableSort, merge } = require('./util')
 const postTypes = require("./types.js")
+const startDebug = (name) => { return require("debug")(`cable-client/${name}`) }
 
 const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
 
@@ -180,33 +181,34 @@ class ChannelDetails extends ChannelDetailsBase {
     this.getChat = getChat
   }
 
-  getPage (opts, cb) {
+  getPage (opts, _causalSort, cb) {
     opts = opts || {}
     let start = opts.tsNewerThan || +(new Date) - TWO_DAYS_MS 
     let end = opts.tsOlderThan || 0
     let limit = opts.limit || 500
-    // return new Promise((resolve, reject) => {
     this.getChat(this.name, start, end, limit, (err, msgs) => {
       if (err) { console.error("err", err); return cb([]); }
-      const reversed = []
-      for (let i = msgs.length - 1; i >= 0; --i) {
-        const msg = msgs[i]
-        if (msg === null) { continue }
-        reversed.push(msg)
-        const msgTime = msg.timestamp
-        const dayTimestamp = msgTime - (msgTime % (24 * 60 * 60 * 1000))
-        if (!this.datesSeen.has(dayTimestamp)) {
-          this.datesSeen.add(dayTimestamp)
-          this.addVirtualMessage({
-            publicKey: this.name,
-            postHash: "",
-            timestamp: dayTimestamp,
-            postType: postTypes.STATUS_DATE_CHANGED /*'status/date-changed' */,
-            text: ""
-          })
+      _causalSort(msgs.filter(p => p !== null), (sorted) => {
+        const reversed = []
+        for (let i = sorted.length - 1; i >= 0; --i) {
+          const msg = sorted[i]
+          if (msg === null) { continue }
+          reversed.push(msg)
+          const msgTime = msg.timestamp
+          const dayTimestamp = msgTime - (msgTime % (24 * 60 * 60 * 1000))
+          if (!this.datesSeen.has(dayTimestamp)) {
+            this.datesSeen.add(dayTimestamp)
+            this.addVirtualMessage({
+              publicKey: this.name,
+              postHash: "",
+              timestamp: dayTimestamp,
+              postType: postTypes.STATUS_DATE_CHANGED /*'status/date-changed' */,
+              text: ""
+            })
+          }
         }
-      }
-      cb(this.interleaveVirtualMessages(reversed, opts))
+        cb(this.interleaveVirtualMessages(reversed, opts))
+      })
     })
   }
 }
