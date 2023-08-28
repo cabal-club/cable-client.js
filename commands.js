@@ -154,8 +154,7 @@ module.exports = {
       // TODO (2023-08-25): filter out undefined messages from core's getChat
       cabal.getChat(cabal.getCurrentChannel(), {}, (msgs) => {
         const ownPosts = msgs.filter(m => {
-          return m.postHash && true
-          // return m.publicKey === pubkey
+          return m.publicKey === pubkey
         })
         const hashes = ownPosts.map(m => m.postHash)
         const foundHashes = hashes.filter(h => {

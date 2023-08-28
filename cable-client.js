@@ -70,6 +70,8 @@ class CableClient extends EventEmitter {
   constructor(opts) {
     super()
 
+    this.showHashes = false
+    this.showIds = false
     this.commands = opts.commands || {}
     this.commands = Object.assign({}, this.commands, defaultCommands)
     this.aliases = {}
@@ -100,8 +102,6 @@ class CableClient extends EventEmitter {
         }
       }
     }
-
-
 
     tickPending()
     if (!opts) { opts = {} }

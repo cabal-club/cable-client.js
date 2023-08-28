@@ -39,8 +39,12 @@ class CabalDetails extends EventEmitter {
       this.emit("end", obj)
       this.emit("update")
     })
-    this.showIds = false
-    this.showHashes = true
+    Object.defineProperty(this, "showIds", {
+      get: () => { return this.cc.showIds }
+    })
+    Object.defineProperty(this, "showHashes", {
+      get: () => { return this.cc.showHashes }
+    })
     this.core = { adminKeys: [], modKeys: [] }
   }
 
