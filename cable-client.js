@@ -67,7 +67,7 @@ const tickPending = () => {
 let queue = []
 
 class CableClient extends EventEmitter {
-  constructor(opts) {
+  constructor(level, opts) {
     super()
 
     this.showHashes = false
@@ -116,7 +116,7 @@ class CableClient extends EventEmitter {
     this.channels = new Map()
     // maps each user's public key to an instance of the User class
     this.users = new Map()
-    this._initializeClient()
+    this._initializeClient(level, opts.config)
     this.join("default")
     this.currentChannel = "default"
     this.localUser = new User(this.core.kp.publicKey.toString("hex"), "")
@@ -190,10 +190,11 @@ class CableClient extends EventEmitter {
   }
 
   // TODO (2023-08-07): add to ready queue
-  _initializeClient() {
+  _initializeClient(level, opts) {
     const log = startDebug("_initialize")
     this.focus("default")
-    this.core = new CableCore({ network: Network })
+    opts = { ...opts, network: Network }
+    this.core = new CableCore(level, opts)
     this._registerEvents()
     // get joined channels and populate this.channels
     tickPending()

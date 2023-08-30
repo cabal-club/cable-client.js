@@ -2,6 +2,8 @@
  * this allows cabal-cli to operate on `cable-client` without needing to change a cabal-cli instance :) */
 const EventEmitter = require("events").EventEmitter
 const CableClient = require("./cable-client.js")
+const { Level } = require("level")
+const { MemoryLevel } = require("memory-level")
 
 
 class User {
@@ -21,7 +23,13 @@ class CabalDetails extends EventEmitter {
     this.key = "a-cabal-key"
     this.statusMessages = []
     this.chat = {"default": []}
-    this.cc = new CableClient(opts)
+
+    let level = Level
+    if (opts.config.temp) {
+      level = MemoryLevel
+    }
+
+    this.cc = new CableClient(level, opts)
     this.cc.ready(() => { console.error("cc ready received by mock"); done() })
     this.cc.on("update", () => {
       this.emit("update", this)
