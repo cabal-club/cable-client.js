@@ -11,9 +11,13 @@ const lpstream = require("length-prefixed-stream")
 //  data
 
 class Network extends EventEmitter {
-  constructor(port) {
+  constructor(opts) {
     super()
-    if (!port) { port = 13331 }
+    if (!opts) { 
+      opts = {}
+    }
+
+    const port = opts.port || 13331
     this.encode = lpstream.encode()
     this.decode = lpstream.decode()
     this.stream = createLanStream(port, true)
