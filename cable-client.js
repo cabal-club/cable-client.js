@@ -530,7 +530,7 @@ class CableClient extends EventEmitter {
   setName(name, done) {
     if (!done) { done = noop }
     debug("set name to %s", name)
-    this.core.setNick(name, (err) => {
+    this.core.setName(name, (err) => {
       if (err) {
         return done(err)
       }
