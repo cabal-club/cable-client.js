@@ -10,6 +10,7 @@ const Network = require("./network.js").Network
 const defaultCommands = require("./commands.js")
 const timestamp = require("monotonic-timestamp")
 const b4a = require("b4a")
+const Pender = require("./pending")
 
 const DEFAULT_TTL = 3
 const DEFAULT_CHANNEL_LIST_LIMIT = 100
@@ -44,9 +45,6 @@ class User {
  * calls to cable client methods are synchronous as far as possible 
  * cable-client sets defaults, but users of cable-client can change them according to their needs
 */
-// TODO (2023-08-07): introduce some notion of a "ready" event, which is when cable-client has finished intializing
-// everything and is ready to have its functions called
-//
 // TODO (2023-08-09): figure out solution for connecting peers with requests and at what layer:
 // * does cable-core have a list of peers? and when a new peer appears we send them our already issue set of requests
 //
@@ -58,20 +56,26 @@ function timeWindowFromOffset(offset) {
   return +(new Date()) - offset
 }
 
-let pending = 0
-const tickPending = () => {
-  ++pending
-  debug("pending counter", pending)
-}
-
-let queue = []
-
 class CableClient extends EventEmitter {
   constructor(level, opts) {
     super()
 
+    if (!opts) {
+      opts = { 
+        config: {
+          temp: true,
+          dbdir: "./data",
+          preferredPort: 0
+        }
+      }
+    }
+
+    this.pender = new Pender()
+    this.pender.on("ready", () => { this.emit("ready") })
+
     this.showHashes = false
     this.showIds = false
+
     this.commands = opts.commands || {}
     this.commands = Object.assign({}, this.commands, defaultCommands)
     this.aliases = {}
@@ -103,8 +107,7 @@ class CableClient extends EventEmitter {
       }
     }
 
-    tickPending()
-    if (!opts) { opts = {} }
+    const proceedNew = this.pender.wait("new cable client instance")
     this.events = new EventsManager()
     debug("new cable client instance")
     // TODO (2023-08-09): replication policies, accept defaults passed to cable client
@@ -123,28 +126,12 @@ class CableClient extends EventEmitter {
     this.users.set(this.localUser.key, this.localUser)
     setTimeout(() => {
       this._initializeProtocol()
-      this._ready()
+      proceedNew()
     }, 150)
   }
 
-  _ready () {
-    const log = startDebug("ready")
-    if (--pending <= 0) {
-      log("we're ready for reals! size of queue", queue.length)
-      this.emit("ready")
-      for (let fn of queue) { fn() }
-      queue = []
-    }
-    log("pending counter at", pending)
-  }
-
   ready(cb) {
-    debug("ready called with %O, pending at %d",  cb, pending)
-    if (pending <= 0) {
-      // TODO (2023-08-23): use web polyfilled nextTick equivalent to call cb
-      return cb()
-    }
-    queue.push(cb)
+    this.pender.enqueue(cb)
   }
 
   /**
@@ -189,7 +176,6 @@ class CableClient extends EventEmitter {
     debug("create")
   }
 
-  // TODO (2023-08-07): add to ready queue
   _initializeClient(level, opts) {
     const log = startDebug("_initialize")
     this.focus("default")
@@ -197,24 +183,22 @@ class CableClient extends EventEmitter {
     this.core = new CableCore(level, opts)
     this._registerEvents()
     // get joined channels and populate this.channels
-    tickPending()
+    const proceedInit = this.pender.wait("initialize client")
     this.core.getJoinedChannels((err, channels) => {
       if (err) { 
         log("had err %s when getting joined channels from core", err)
-        return this._ready()
+        return proceedInit()
       }
       channels.forEach(ch => {
-        this._addChannel(channel, true)
-        // TODO (2023-08-09): pipeline a set of promises to resolve
-        // when all promises are resolved, tick one less on the ready queue
-        tickPending()
+        this._addChannel(ch, true)
+        const proceedCh = this.pender.wait("joined channel " + ch)
         this.core.getTopic(ch, (err, topic) => {
-          if (err) { return this._ready() }
-          this.channels.get(channel).topic = topic
+          if (err) { return proceedCh() }
+          this.channels.get(ch).topic = topic
         })
 
         this.core.getUsersInChannel(ch, (err, users) => {
-          if (err) { return this._ready() }
+          if (err) { return proceedCh() }
           // TODO (2023-08-09): change structure of data returned by core?
           for (let userKey of users.keys()) {
             let name = users.get(userKey)
@@ -222,10 +206,10 @@ class CableClient extends EventEmitter {
             const u = new User(userKey, name)
             this.users.set(userKey, u)
           }
-          this._ready()
+          proceedCh()
         })
       })
-      this._ready()
+      proceedInit()
     })
   }
 
@@ -238,7 +222,7 @@ class CableClient extends EventEmitter {
 
   // listen for events that are emitted from cable-core when it has processed new posts
   _registerEvents() {
-    tickPending()
+    const proceedEvents = this.pender.wait("register events")
     const log = startDebug("events")
     // post/text
     this.events.register("chat", this.core, "chat/add", ({ channel, hash, post, publicKey }) => {
@@ -296,7 +280,7 @@ class CableClient extends EventEmitter {
       log("users/name-changed: %s set name to %s", publicKey, name)
       this.emit("update")
     })
-    this._ready()
+    proceedEvents()
   }
 
   // handles all initial cable-specific protocol bootstrapping
@@ -305,11 +289,11 @@ class CableClient extends EventEmitter {
     log("get joined channels")
     
     // operate on joined channels
-    tickPending()
+    const proceedProtocolJoined = this.pender.wait("init protocol: joined")
     this.core.getJoinedChannels((err, channels) => {
       if (err) { 
         log("had err %s when getting joined channels from core", err)
-        return this._ready()
+        return proceedProtocolJoined()
       }
       log("joined channels: %s", channels)
       const policy = this.policies.JOINED
@@ -318,10 +302,10 @@ class CableClient extends EventEmitter {
         const postsReq = this.core.requestPosts(ch, timeWindowFromOffset(policy.windowSize), 0, DEFAULT_TTL, policy.limit)
         log(postsReq)
       })
-      this._ready()
+      proceedProtocolJoined()
     })
 
-    tickPending()
+    const proceedProtocolChannels = this.pender.wait("init protocol: all channels")
     this.core.getChannels((err, channels) => {
       log("get all channels", err, channels)
       const policy = this.policies.UNJOINED
@@ -338,13 +322,13 @@ class CableClient extends EventEmitter {
         const stateReq = this.core.requestState(ch, DEFAULT_TTL, 1)
         log("request state for %s", ch)
       })
-      this._ready()
+      proceedProtocolChannels()
     })
     // TODO (2023-08-09): operate on dropped channels
    
     // request channel list, in case new channels have been created while offline, keep intermittently requesting for
     // new channels as well
-    tickPending()
+    const proceedListRequest = this.pender.wait("init protocol: channel list request")
     const channelsReq = this.core.requestChannels(DEFAULT_TTL, 0, DEFAULT_CHANNEL_LIST_LIMIT)
     log("request channels")
     // TODO (2023-08-09): save this timer in case we need to cancel it
@@ -352,7 +336,7 @@ class CableClient extends EventEmitter {
       const channelsReq = this.core.requestChannels(DEFAULT_TTL, 0, DEFAULT_CHANNEL_LIST_LIMIT)
       log("periodic request channels")
     }, CHANNEL_LIST_RENEWAL_INTERVAL)
-    this._ready()
+    proceedListRequest()
   }
 
   // we received notice of a new channel, do cable-client book keeping and some protocol stuff
