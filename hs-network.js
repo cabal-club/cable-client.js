@@ -1,7 +1,8 @@
 const lpstream = require("length-prefixed-stream")
 const b4a = require("b4a")
-const net = require("net")
-const debug = require("debug")("transport/tcp")
+const hyperswarm = require("hyperswarm")
+const crypto = require('hypercore-crypto')
+const debug = require("debug")("transport/hyperswarm")
 const EventEmitter = require("events").EventEmitter
 
 class Network extends EventEmitter {
@@ -11,25 +12,21 @@ class Network extends EventEmitter {
       opts = {} 
     }
 
-    this.serve = opts.serve || false
-    this.port = opts.tcpPort || 13333
-    this.ip = opts.ip || "127.0.0.1"
-
+    this.port = opts.dhtPort || 13331
     this.peers = []
 
-    if (opts.serve) {
-      this._startServer()
-    } else {
-      const socket = net.connect(this.port, this.ip)
-      this._setupPeer(socket)
-    }
-  }
+    const discoveryKey = crypto.discoveryKey(b4a.from(opts.key, 'hex'))
 
-  _startServer() {
-    const server = net.createServer(socket => {
-      this._setupPeer(socket)
+    const swarmOpts = { preferredPort: this.port }
+    const swarm = hyperswarm(swarmOpts)
+    swarm.join(discoveryKey, {
+      lookup: true,
+      announce: true
     })
-    server.listen(this.port)
+
+    swarm.on('connection', (socket, info) => {
+			this._setupPeer(socket)
+    })
   }
 
   _setupPeer(socket) {
@@ -56,7 +53,6 @@ class Network extends EventEmitter {
 
   _handleSocketData(msg) {
     const data = b4a.from(msg.toString("hex"), "hex")
-    // debug("recieved from", msg.address)
     debug("data", data)
     this.emit("data", { address: "", data })
   }

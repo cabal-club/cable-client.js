@@ -6,7 +6,9 @@ const CableCore = require("cable-core/index.js").CableCore
 const EventsManager = require("cable-core/index.js").EventsManager
 const ChannelDetails = require("./channel.js").ChannelDetails
 const replicationPolicy = require("./policy.js")
-const Network = require("./tcp-network.js").Network
+const HSNetwork = require("./hs-network.js").Network
+const TCPNetwork = require("./tcp-network.js").Network
+const LANNetwork = require("./network.js").Network
 const defaultCommands = require("./commands.js")
 const timestamp = require("monotonic-timestamp")
 const b4a = require("b4a")
@@ -179,7 +181,11 @@ class CableClient extends EventEmitter {
   _initializeClient(level, opts) {
     const log = startDebug("_initialize")
     this.focus("default")
-    opts = { ...opts, network: Network }
+    const network = []
+    if (!opts.disableDHT) { network.push(HSNetwork) }
+    if (!opts.disableTCP) { network.push(TCPNetwork) }
+    if (!opts.disableLAN) { network.push(LANNetwork) }
+    opts = { ...opts, network }
     this.core = new CableCore(level, opts)
     this._registerEvents()
     // get joined channels and populate this.channels

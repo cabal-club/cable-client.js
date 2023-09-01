@@ -20,7 +20,7 @@ class User {
 class CabalDetails extends EventEmitter {
   constructor(opts, done) {
     super()
-    this.key = "a-cabal-key"
+    this.key = "1115a517c5922baa9594f5555c16e091ce4251579818fb4c4f301804c847f222"
     this.statusMessages = []
     this.chat = {"default": []}
 
@@ -28,9 +28,10 @@ class CabalDetails extends EventEmitter {
     if (opts.config.temp) {
       level = MemoryLevel
     }
+    opts.config.key = this.key
 
     this.cc = new CableClient(level, opts)
-    this.cc.ready(() => { console.error("cc ready received by mock"); done() })
+    this.cc.ready(() => { done() })
     this.cc.on("update", () => {
       this.emit("update", this)
     })

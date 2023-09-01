@@ -17,7 +17,7 @@ class Network extends EventEmitter {
       opts = {}
     }
 
-    const port = opts.port || 13331
+    const port = opts.lanPort || 13332
     this.encode = lpstream.encode()
     this.decode = lpstream.decode()
     this.stream = createLanStream(port, true)
