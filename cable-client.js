@@ -212,6 +212,7 @@ class CableClient extends EventEmitter {
             const u = new User(userKey, name)
             this.users.set(userKey, u)
           }
+          this.emit("update")
           proceedCh()
         })
       })
