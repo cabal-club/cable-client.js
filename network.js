@@ -18,10 +18,8 @@ class Network extends EventEmitter {
     }
 
     const port = opts.lanPort || 13332
-    this.encode = lpstream.encode()
     this.decode = lpstream.decode()
     this.stream = createLanStream(port, true)
-    this.encode.pipe(this.stream)
     this.stream.pipe(this.decode)
 
     this.decode.on("data", this._handleSocketData.bind(this))
@@ -36,8 +34,7 @@ class Network extends EventEmitter {
 
   broadcast(data) {
     debug("broadcast data", data)
-    this.encode.write(data)
-    // this.stream.write(data)
+    this.stream.write(data)
   }
 }
 

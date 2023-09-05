@@ -35,12 +35,13 @@ class Network extends EventEmitter {
   _setupPeer(socket) {
     const peer = { 
       id: (Math.random() + "").slice(2), 
-      encode: lpstream.encode(), 
+      // encode: socket lpstream.encode(), 
       decode: lpstream.decode(),
       socket
     }
     socket.pipe(peer.decode)
-    peer.encode.pipe(socket)
+    socket.on("data", (data) => { debug("raw socket data", data) })
+    socket.on("connection", (c) => { debug("connection", c) })
     peer.decode.on("data", this._handleSocketData.bind(this))
 
     this.peers.push(peer)
@@ -56,15 +57,14 @@ class Network extends EventEmitter {
 
   _handleSocketData(msg) {
     const data = b4a.from(msg.toString("hex"), "hex")
-    // debug("recieved from", msg.address)
-    debug("data", data)
+    debug("LEN data", data)
     this.emit("data", { address: "", data })
   }
 
   broadcast (data) {
     debug("broadcast data", data)
     this.peers.forEach(peer => {
-      peer.encode.write(data)
+      peer.socket.write(data)
     })
   }
 }

@@ -172,7 +172,7 @@ class Client {
   /* static methods */
   static getDatabaseVersion () { return "v1.3.37" }
   // TODO (2023-08-23): don't hardcode this :))
-  static getCabalDirectory() { return "/home/cblgh/code/cabal-club/grant-work-2022/cable-client/cabal-test" }
+  static getCabalDirectory() { return "/home/cblgh/code/cabal-club/cable-town/cable-client/cable-client/cabal-test" }
 
   /* variations of the same: getting the cabal instance */
   // for cable-client, we'll only operate on a single cabal 
