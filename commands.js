@@ -128,7 +128,7 @@ module.exports = {
       res.info(`there are currently ${channels.length} channels `)
       channels.map((c) => {
         const info = cabal.getInformation(c)
-        var topic = info.get("topic")
+        var topic = info.get("topic") || ""
         var shortTopic = topic.length > 40 ? topic.slice(0, 40) + '..' : topic || ''
         var count = info.get("members").size
         var userPart = count ? `: ${count} ${count === 1 ? 'person' : 'people'}` : ''

@@ -1,7 +1,4 @@
-const EventEmitter = require("events").EventEmitter
-const debugParent = "cable-client"
-const debug = require("debug")(debugParent)
-const startDebug = (name) => { return require("debug")(`${debugParent}/${name}`) }
+// internal deps
 const CableCore = require("cable-core/index.js").CableCore
 const EventsManager = require("cable-core/index.js").EventsManager
 const ChannelDetails = require("./channel.js").ChannelDetails
@@ -10,9 +7,14 @@ const HSNetwork = require("./hs-network.js").Network
 const TCPNetwork = require("./tcp-network.js").Network
 const LANNetwork = require("./network.js").Network
 const defaultCommands = require("./commands.js")
+const Pender = require("./pending")
+// external deps
+const EventEmitter = require("events").EventEmitter
+const debugParent = "cable-client"
+const debug = require("debug")(debugParent)
+const startDebug = (name) => { return require("debug")(`${debugParent}/${name}`) }
 const timestamp = require("monotonic-timestamp")
 const b4a = require("b4a")
-const Pender = require("./pending")
 
 const DEFAULT_TTL = 3
 const DEFAULT_CHANNEL_LIST_LIMIT = 100
@@ -53,7 +55,10 @@ class User {
 // TODO (2023-08-09): replication optimization: when we leave a channel, issue a new time range request with replication policy for unjoined channels
 //
 // TODO (2023-08-09): receive event from core when a time range request has reached end of life, enabling renewal of the request?
-
+//
+// TODO (2023-09-13): introduce !status channel
+//
+// TODO (2023-09-13): detect joining new cabal and join channel 'default'
 function timeWindowFromOffset(offset) {
   return +(new Date()) - offset
 }
@@ -204,13 +209,12 @@ class CableClient extends EventEmitter {
         })
 
         this.core.getUsersInChannel(ch, (err, users) => {
+          debug("users in channel", users)
           if (err) { return proceedCh() }
-          // TODO (2023-08-09): change structure of data returned by core?
           for (let userKey of users.keys()) {
             let name = users.get(userKey)
-            if (name.length === 64) { name = "" }
-            const u = new User(userKey, name)
-            this.users.set(userKey, u)
+            this._updateUserName(userKey, name)
+            this.channels.get(ch).addMember(userKey)
           }
           this.emit("update")
           proceedCh()
@@ -220,10 +224,20 @@ class CableClient extends EventEmitter {
     })
   }
 
-  _addUserIfNew(publicKey) {
+  _addUser(publicKey) {
     if (!this.users.has(publicKey)) {
       const u = new User(publicKey, "")
       this.users.set(publicKey, u)
+    }
+  }
+  _updateUserName(publicKey, name="") {
+    debug("add user, new name %s", name)
+    if (name.length === 64) { name = "" }
+    if (!this.users.has(publicKey)) {
+      const u = new User(publicKey, name)
+      this.users.set(publicKey, u)
+    } else {
+      this.users.get(publicKey).name = name
     }
   }
 
@@ -233,7 +247,7 @@ class CableClient extends EventEmitter {
     const log = startDebug("events")
     // post/text
     this.events.register("chat", this.core, "chat/add", ({ channel, hash, post, publicKey }) => {
-      this._addUserIfNew(publicKey)
+      this._addUser(publicKey)
       this._addChannel(channel)
       log("chat/add: new post in %s %O (hash %s) by %s", channel, post, hash, publicKey)
       this.emit("update")
@@ -242,7 +256,7 @@ class CableClient extends EventEmitter {
     // post/delete
     // TODO (2023-08-23): add toggle to show post hashes in cli + command to delete by hash
     this.events.register("chat", this.core, "chat/remove", ({ channel, hash, topic, publicKey }) => {
-      this._addUserIfNew(publicKey)
+      this._addUser(publicKey)
       this._addChannel(channel)
       log("chat/remove: (TODO in cli view) %s removed post with hash %s from channel", publicKey, hash, channel)
       this.emit("update")
@@ -250,7 +264,7 @@ class CableClient extends EventEmitter {
 
     // post/topic
     this.events.register("channels", this.core, "channels/topic", ({ channel, topic, publicKey }) => {
-      this._addUserIfNew(publicKey)
+      this._addUser(publicKey)
       this._addChannel(channel)
       this.channels.get(channel).topic = topic
       log("channels/topic: %s topic set to %s by %s", channel, topic, publicKey)
@@ -259,7 +273,7 @@ class CableClient extends EventEmitter {
 
     // post/join
     this.events.register("channels", this.core, "channels/join", ({ channel, publicKey }) => {
-      this._addUserIfNew(publicKey)
+      this._addUser(publicKey)
       this._addChannel(channel)
       this.channels.get(channel).addMember(publicKey)
       log("channels/join: %s joined by %s", channel, publicKey)
@@ -267,7 +281,7 @@ class CableClient extends EventEmitter {
 
     // post/leave
     this.events.register("channels", this.core, "channels/leave", ({ channel, publicKey }) => {
-      this._addUserIfNew(publicKey)
+      this._addUser(publicKey)
       this._addChannel(channel)
       this.channels.get(channel).removeMember(publicKey)
       log("channels/leave: %s left by %s", channel, publicKey)
@@ -282,7 +296,7 @@ class CableClient extends EventEmitter {
 
     // post/info key:name
     this.events.register("users", this.core, "users/name-changed", ({ publicKey, name }) => {
-      this._addUserIfNew(publicKey)
+      this._addUser(publicKey)
       this.users.get(publicKey).name = name
       log("users/name-changed: %s set name to %s", publicKey, name)
       this.emit("update")
@@ -341,7 +355,7 @@ class CableClient extends EventEmitter {
     // TODO (2023-08-09): save this timer in case we need to cancel it
     setInterval(() => {
       const channelsReq = this.core.requestChannels(DEFAULT_TTL, 0, DEFAULT_CHANNEL_LIST_LIMIT)
-      log("periodic request channels")
+      log("periodic channel list request")
     }, CHANNEL_LIST_RENEWAL_INTERVAL)
     proceedListRequest()
   }
@@ -470,6 +484,13 @@ class CableClient extends EventEmitter {
     debug("getUsers")
     return new Map(this.users)
   }
+  getChannelMembers(channel=this.currentChannel) {
+    const obj = {}
+    this.channels.get(channel).getMembers().forEach(userKey => {
+      obj[userKey] = this.users.get(userKey)
+    })
+    return obj
+  }
   getAllChannels() {
     debug("get all channels")
     const channels = []
@@ -502,6 +523,14 @@ class CableClient extends EventEmitter {
     if (focus) { this.focus(channel) }
     this.core.join(channel)
     const postsReq = this.core.requestPosts(channel, timeWindowFromOffset(this.policies.JOINED.windowSize), 0, DEFAULT_TTL, this.policies.JOINED.limit)
+    // make sure we populate our channels object with the current members of the channel we are joining
+    this.core.getUsersInChannel(channel, (err, users) => {
+      for (let userKey of users.keys()) {
+        const name = users.get(userKey)
+        this._updateUserName(userKey, name)
+        this.channels.get(channel).addMember(userKey)
+      }
+    })
   }
 
   leave(channel) {
@@ -533,7 +562,6 @@ class CableClient extends EventEmitter {
       cb()
     })
   }
-  // TODO (2023-08-01): change to core.setName
   setName(name, done) {
     if (!done) { done = noop }
     debug("set name to %s", name)

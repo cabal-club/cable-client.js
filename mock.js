@@ -1,28 +1,20 @@
 /* translation layer between old cabal-client api and the new library cable-client. 
- * this allows cabal-cli to operate on `cable-client` without needing to change a cabal-cli instance :) */
+ *                                                                       ^ notice the "-le" suffix; cable, not cabal! :)
+ * this allows cabal-cli to operate on `cable-client` with only minimal changes to the cabal-cli codebase :) */
+
+// mock.js basically acts as a guide for how existing cabal clients can be updated, showing the api changes between the
+// old cabal-client and the new cable-client
+
 const EventEmitter = require("events").EventEmitter
 const CableClient = require("./cable-client.js")
 const { Level } = require("level")
 const { MemoryLevel } = require("memory-level")
 
-
-class User {
-  constructor(key, name) {
-    this.name = name
-    this.key = key
-  }
-  isAdmin() { return false }
-  isModerator() { return false }
-  isHidden() { return false }
-}
-
-// TODO (2023-08-23): halt calls of cc's methods until cc.ready has fired
 class CabalDetails extends EventEmitter {
   constructor(opts, done) {
     super()
+    // hardcoded key for proof of concept :)
     this.key = "1115a517c5922baa9594f5555c16e091ce4251579818fb4c4f301804c847f222"
-    this.statusMessages = []
-    this.chat = {"default": []}
 
     let level = Level
     if (opts.config.temp) {
@@ -58,18 +50,16 @@ class CabalDetails extends EventEmitter {
   }
 
   getChat(cb) {
-    this.cc.getChat(this.getCurrentChannel(), {}, cb)
+    // gets chat stored in local database; this is different from requesting a time window of posts from peers
+    this.cc.getChat(this.getCurrentChannel(), { tsNewerThan: 0 } , cb)
   }
 
   getTopic() { return this.cc.getTopic(this.getCurrentChannel()) }
   focusChannel(ch) {
     this.emit("update", this)
     this.cc.focus(ch)
-    this.cc.getInformation(ch)
   }
-  getLocalName() { 
-    return this.cc.localUser.name
-  }
+  getLocalName() { return this.cc.localUser.name }
   getChannels(opts) { 
     if (!opts) { opts = {} }
     if (opts.onlyJoined) { return this.getJoinedChannels() }
@@ -86,65 +76,9 @@ class CabalDetails extends EventEmitter {
     }
     return obj
   }
-  getChannelMembers() { return [this.cc.localUser] }
-  addStatusMessage(m) {
-    this.cc.addStatusMessage(m, this.getCurrentChannel()) 
-  }
-  processLine(line, cb) {
-    this.cc.processLine(line, cb)
-    /*
-    if (line.length === 0) { return }
-    if (line.startsWith("/")) {
-      const delim = line.indexOf(" ")
-      const command = line.slice(1, delim)
-      const value = line.slice(delim).trim()
-      switch (command) {
-        case "nick":
-        case "name":
-          this.cc.setName(value, () => {
-            this.emit("update", this)
-          })
-          return
-          break
-        case "j":
-        case "join":
-          if (!this.cc.getJoinedChannels().includes(value)) {
-            this.cc.join(value)
-          }
-          break
-        case "l":
-        case "leave":
-        // TODO (2023-08-07): add extra leave logic for picking current channel better
-          if (this.cc.getJoinedChannels().includes(value)) {
-            this.cc.leave(value)
-          }
-          break
-        case "topic":
-          this.cc.setTopic(value, this.getCurrentChannel(), () => {
-            this.emit("update", this)
-          })
-          break
-      }
-      this.emit("update", this)
-      return
-    }
-    // it was a chat message
-    this.cc.postText(line, this.getCurrentChannel())
-    // this.chat[this.getCurrentChannel()].push({ 
-    //   key: this.cc.localUser.key, 
-    //   value: { 
-    //     timestamp: +(new Date()),
-    //     type: "chat/text",
-    //     content: {
-    //       text: line
-    //     }
-    //   }
-    // })
-    setTimeout(() => {
-      this.emit("update", this)
-    }, 40)
-    */
-  }
+  getChannelMembers() { return this.cc.getChannelMembers() }
+  addStatusMessage(m) { this.cc.addStatusMessage(m, this.getCurrentChannel())  }
+  processLine(line, cb) { this.cc.processLine(line, cb) }
   publishMessage() { }
 }
 
@@ -158,13 +92,10 @@ class Client {
     }
     this.queue = []
     this.details = new CabalDetails(opts, this._start)
-    this.cabals = []
-    this.cabalKeys = []
   }
 
-  getJoinedChannels() { return this.details.getJoinedChannels() }
-
   /* methods where we punt to cabal details */
+  getJoinedChannels() { return this.details.getJoinedChannels() }
   getUsers() { return this.details.getUsers() }
   getMessages(opts, cb) { this.details.getChat(cb) }
   focusChannel(ch) { this.details.focusChannel(ch) }
@@ -175,7 +106,7 @@ class Client {
   static getCabalDirectory() { return "/home/cblgh/code/cabal-club/cable-town/cable-client/cable-client/cabal-test" }
 
   /* variations of the same: getting the cabal instance */
-  // for cable-client, we'll only operate on a single cabal 
+  // for cable-client, we'll only operate on a single cabal instance (if you want more, instantiate more cable-clients)
   cabalToDetails () { return this.details }
   createCabal() {
     return (new Promise((res, rej) => {
@@ -198,7 +129,13 @@ class Client {
   getNumberUnreadMessages() { return 0 }
   getMentions() { return [] }
   markChannelRead(ch) { }
-  addCabal(key) {}
+  addCabal(key) {
+    return new Promise((res, rej) => {
+      this.queue.push(() => {
+        return res(this.details)
+      })
+    })
+  }
   getCommands() {}
 }
 
