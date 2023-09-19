@@ -12,9 +12,10 @@ const Pender = require("./pending")
 const EventEmitter = require("events").EventEmitter
 const debugParent = "cable-client"
 const debug = require("debug")(debugParent)
-const startDebug = (name) => { return require("debug")(`${debugParent}/${name}`) }
+const startDebug = (name) => { return require("debug")(`${debugParent}:${name}`) }
 const timestamp = require("monotonic-timestamp")
 const b4a = require("b4a")
+const path = require("path")
 
 const DEFAULT_TTL = 3
 const DEFAULT_CHANNEL_LIST_LIMIT = 100
@@ -191,6 +192,10 @@ class CableClient extends EventEmitter {
     if (!opts.disableTCP) { network.push(TCPNetwork) }
     if (!opts.disableLAN) { network.push(LANNetwork) }
     opts = { ...opts, network }
+    if (!opts.dbdir) { opts.dbdir = "./data" }
+    if (opts.dbdir) {
+      opts.storage = path.join(opts.dbdir, opts.key)
+    }
     this.core = new CableCore(level, opts)
     this._registerEvents()
     // get joined channels and populate this.channels
