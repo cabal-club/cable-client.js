@@ -34,7 +34,7 @@ class Network extends EventEmitter {
 
   _setupPeer(socket) {
     const peer = { 
-      id: (Math.random() + "").slice(2), 
+      id: (Math.random() + "").slice(10), 
       // encode: socket lpstream.encode(), 
       decode: lpstream.decode(),
       socket

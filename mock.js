@@ -161,7 +161,7 @@ class Client {
 }
 
 function generateKey() {
-  const buf = crypto.randomBytes(64)
+  const buf = crypto.randomBytes(32)
   return b4a.toString(buf, "hex")
 }
 
