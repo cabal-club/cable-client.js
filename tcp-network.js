@@ -1,7 +1,7 @@
 const lpstream = require("length-prefixed-stream")
 const b4a = require("b4a")
 const net = require("net")
-const debug = require("debug")("transport/tcp")
+const debug = require("debug")("transport:tcp")
 const EventEmitter = require("events").EventEmitter
 
 class Network extends EventEmitter {

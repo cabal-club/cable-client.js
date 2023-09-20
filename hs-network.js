@@ -2,7 +2,7 @@ const lpstream = require("length-prefixed-stream")
 const b4a = require("b4a")
 const hyperswarm = require("hyperswarm")
 const crypto = require('hypercore-crypto')
-const debug = require("debug")("transport/hyperswarm")
+const debug = require("debug")("transport:hyperswarm")
 const EventEmitter = require("events").EventEmitter
 
 class Network extends EventEmitter {

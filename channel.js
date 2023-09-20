@@ -1,8 +1,8 @@
 const timestamp = require('monotonic-timestamp')
 const { stableSort, merge } = require('./util')
 const postTypes = require("./types.js")
-const debug = require("debug")(`cable-client/channel.js`)
-const startDebug = (name) => { return require("debug")(`cable-client/${name}`) }
+const debug = require("debug")(`cable-client:channel.js`)
+const startDebug = (name) => { return require("debug")(`cable-client:${name}`) }
 
 class ChannelDetailsBase {
   constructor (channelName) {

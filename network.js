@@ -1,7 +1,7 @@
 const EventEmitter = require("events").EventEmitter
 const createLanStream = require("dgram-broadcast")
 const b4a = require("b4a")
-const debug = require("debug")("transport/dgram-broadcast")
+const debug = require("debug")("transport:dgram-broadcast")
 const lpstream = require("length-prefixed-stream")
 
 // network events:
