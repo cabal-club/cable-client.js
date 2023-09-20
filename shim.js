@@ -1,15 +1,16 @@
-/* translation layer between old cabal-client api and the new library cable-client. 
- *                                                                       ^ notice the "-le" suffix; cable, not cabal! :)
- * this allows cabal-cli to operate on `cable-client` with only minimal changes to the cabal-cli codebase :) */
+/* 
+ * translation layer between old cabal-client api and the new library cable-client. 
+ * this allows cabal-cli to operate on `cable-client` with only minimal changes to the cabal-cli codebase :) 
+*/
 
-// mock.js basically acts as a guide for how existing cabal clients can be updated, showing the api changes between the
-// old cabal-client and the new cable-client
+// shim.js acts as a guide for how existing cabal clients (pre-cable) can be updated, demonstrating the api changes
+// between the old cabal-client and the new cable-client
 
 const EventEmitter = require("events").EventEmitter
 const CableClient = require("./cable-client.js")
 const crypto = require("cable.js/cryptography.js")
 const b4a = require("b4a")
-const xdg = require("xdg-portable") // uses `path` which also works after being browserfied 
+const xdg = require("xdg-portable") // note: xdg-portable uses `path` which also works after being browserfied 
 const path = require("path")
 const { Level } = require("level")
 const { MemoryLevel } = require("memory-level")
@@ -17,7 +18,6 @@ const { MemoryLevel } = require("memory-level")
 class CabalDetails extends EventEmitter {
   constructor(opts, done) {
     super()
-    // hardcoded key for proof of concept :)
     this.key = opts.key
 
     let level = Level
@@ -86,7 +86,6 @@ class CabalDetails extends EventEmitter {
   publishMessage() { }
 }
 
-// TODO (2023-08-23): decomplicate the ready queuing lol
 class Client {
   constructor(opts) {
     this._ready = false
@@ -147,7 +146,7 @@ class Client {
   getNumberUnreadMessages() { return 0 }
   getMentions() { return [] }
   markChannelRead(ch) { }
-  // 2023-09-19 note: only supports one cabal instance; rename to "startCabal(key)" after mocking phase is concluded
+  // 2023-09-19 note: only supports one cabal instance; rename to "startCabal(key)" once this shim phase is concluded
   addCabal(key) {
     return new Promise((res, rej) => {
       this.__setKey(key)
