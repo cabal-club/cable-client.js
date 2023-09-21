@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 the cabal-club authors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 module.exports = {
   nick: {
     help: () => 'change your display name',
@@ -15,17 +19,15 @@ module.exports = {
       })
     }
   },
-/*
   share: {
-    help: () => 'print a cabal key with you as admin. useful for sending to friends',
-    category: ["sharing"],
+    help: () => 'print a cabal key, useful for sending to friends',
+    category: ["basics", "sharing"],
     call: (cabal, res, arg) => {
-      const adminkey = `cabal://${cabal.key}?admin=${cabal.user.key}`
-      res.info(adminkey, { data: { adminkey } })
+      const key = `cabal://${cabal.key}` // add back admin key once cable has mod actions
+      res.info(key, { data: { key } })
       res.end()
     }
   },
-*/
   ids: {
     help: () => 'toggle showing ids at the end of nicks. useful for moderation',
     category: ["moderation"],
@@ -214,16 +216,15 @@ module.exports = {
 			res.end()
     }
   },
-/*
   clear: {
     help: () => 'clear the current backscroll',
     category: ["basics", "misc"],
     call: (cabal, res, arg) => {
-      cabal.client.clearStatusMessages()
+      const chan = cabal.getCurrentChannel()
+      cabal.clearStatusMessages(chan)
       res.end()
     }
   },
-*/
   topic: {
     help: () => 'set the topic/description/`message of the day` for a channel',
     category: ["channels", "basics"],

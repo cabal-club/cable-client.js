@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 the cabal-club authors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // internal deps
 const CableCore = require("cable-core/index.js").CableCore
 const EventsManager = require("cable-core/index.js").EventsManager
@@ -77,6 +81,8 @@ class CableClient extends EventEmitter {
         }
       }
     }
+
+    this.key = opts.key
 
     this.pender = new Pender()
     this.pender.on("ready", () => { this.emit("ready") })
@@ -556,6 +562,13 @@ class CableClient extends EventEmitter {
     if (!this.channels.has(channel)) { return }
     this.channels.get(channel).addVirtualMessage(statusMessage)
     debug("add status message %s to channel %s", statusMessage, channel)
+    this.emit("update")
+  }
+  clearStatusMessages(channel) {
+    if (!this.channels.has(channel)) { return }
+    this.channels.get(channel).clearVirtualMessages()
+    debug("clear status message for channel %s", channel)
+    this.emit("update")
   }
   // TODO (2023-08-07): emit event
   setTopic(topic, channel, cb) {

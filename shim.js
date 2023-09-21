@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 the cabal-club authors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /* 
  * translation layer between old cabal-client api and the new library cable-client. 
  * this allows cabal-cli to operate on `cable-client` with only minimal changes to the cabal-cli codebase :) 
@@ -141,6 +145,16 @@ class Client {
     }
     this.opts.key = key
   }
+
+  static scrubKey (key) {
+    if (!key || typeof key !== 'string') return ''
+    // remove url search params; indexOf returns -1 if no params => would chop off the last character if used w/ slice
+    if (key.indexOf("?") >= 0) {
+      return key.slice(0, key.indexOf("?")).replace('cabal://', '').replace('cbl://', '').replace(/\//g, '')
+    }
+    return key.replace('cabal://', '').replace('cbl://', '').replace(/\//g, '')
+  }
+
 
   /* unimplemented/untouched methods */
   getNumberUnreadMessages() { return 0 }
