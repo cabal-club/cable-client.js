@@ -7,7 +7,7 @@
     "b4a": "1.6.4",
     "cable-core": "^0.0.2",
     "cable.js": "^0.0.3",
-    "debug": "^4.3.4",
+    "debug": "4.3.4",
     "dgram-broadcast": "^1.0.0",
     "hypercore-crypto": "2.1.1",
     "hyperswarm": "2.13.0",
@@ -16,7 +16,7 @@
     "memory-level": "1.0.0",
     "monotonic-timestamp": "0.0.9",
     "varint": "6.0.0",
-    "xdg-portable": "^10.6.0"
+    "xdg-portable": "10.6.0"
   },
   "devDependencies": {},
   "scripts": {
