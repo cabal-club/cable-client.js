@@ -5,8 +5,8 @@
   "main": "cable-client.js",
   "dependencies": {
     "b4a": "1.6.4",
-    "cable-core": "^0.0.2",
-    "cable.js": "^0.0.3",
+    "cable-core": "^0.1.0",
+    "cable.js": "^0.1.0",
     "debug": "4.3.4",
     "dgram-broadcast": "^1.0.0",
     "hypercore-crypto": "2.1.1",
