@@ -18,10 +18,13 @@ const xdg = require("xdg-portable") // note: xdg-portable uses `path` which also
 const path = require("path")
 const { Level } = require("level")
 const { MemoryLevel } = require("memory-level")
+const readOrGenerateKeypair = require("./keypair.js")
+const mkdirp = require('mkdirp') // note: check to make sure this module doesn't throw after browserify
 
 class CabalDetails extends EventEmitter {
   constructor(opts, done) {
     super()
+    this.core = { adminKeys: [], modKeys: [] } // shim for compatibility reasons
     this.key = opts.key
 
     let level = Level
@@ -30,31 +33,36 @@ class CabalDetails extends EventEmitter {
     }
     opts.config.key = this.key
 
-    this.cc = new CableClient(level, opts)
-    this.cc.ready(() => { done() })
-    this.cc.on("update", () => {
-      this.emit("update", this)
+    const keypath = path.join(opts.config.dbdir, opts.key, "keypair.json")
+    mkdirp.sync(path.dirname(keypath))
+   
+    readOrGenerateKeypair(opts.config.keystore, keypath, opts.config.temp, (keypair) => {
+      opts.config.keypair = keypair
+      this.cc = new CableClient(level, opts)
+      this.cc.ready(() => { done() })
+      this.cc.on("update", () => {
+        this.emit("update", this)
+      })
+      // events for slash-command output
+      this.cc.on("info", (payload) => {
+        this.emit("info", payload)
+        this.emit("update")
+      })
+      this.cc.on("error", (err) => {
+        this.emit("error", err)
+        this.emit("update")
+      })
+      this.cc.on("end", (obj) => {
+        this.emit("end", obj)
+        this.emit("update")
+      })
+      Object.defineProperty(this, "showIds", {
+        get: () => { return this.cc.showIds }
+      })
+      Object.defineProperty(this, "showHashes", {
+        get: () => { return this.cc.showHashes }
+      })
     })
-    // events for slash-command output
-    this.cc.on("info", (payload) => {
-      this.emit("info", payload)
-      this.emit("update")
-    })
-    this.cc.on("error", (err) => {
-      this.emit("error", err)
-      this.emit("update")
-    })
-    this.cc.on("end", (obj) => {
-      this.emit("end", obj)
-      this.emit("update")
-    })
-    Object.defineProperty(this, "showIds", {
-      get: () => { return this.cc.showIds }
-    })
-    Object.defineProperty(this, "showHashes", {
-      get: () => { return this.cc.showHashes }
-    })
-    this.core = { adminKeys: [], modKeys: [] }
   }
 
   getChat(cb) {
@@ -118,7 +126,7 @@ class Client {
   cabalToDetails () { return this.details }
   createCabal() {
     return (new Promise((res, rej) => {
-      const key = generateKey()
+      const key = generateJoiningKey()
       this.__setKey(key)
       this.details = new CabalDetails(this.opts, this._start)
       this.queue.push(() => {
@@ -173,7 +181,8 @@ class Client {
   getCommands() {}
 }
 
-function generateKey() {
+// aka cabal key
+function generateJoiningKey() {
   const buf = crypto.randomBytes(32)
   return b4a.toString(buf, "hex")
 }
