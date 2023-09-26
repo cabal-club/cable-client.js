@@ -83,7 +83,7 @@ event, they should update their state & rerender.
 encapsulates everything channels (mentions in that channel, status messages for the channel
 (like having called a command eg `/names`, when it was last read, if it's currently being
 viewed, if it's joined and so on). It also has a barebones implementation for virtual channels,
-which currently is only the `!status` channel.
+channels which can contain status messages that are not replicated outside the local client.
 
 ## Transitioning from the old `cabal-client` library
 Clients that have yet to transition from the old cabal-client library may start their refactor
