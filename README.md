@@ -54,8 +54,8 @@ const client = new Client({
     disableLAN: true,
     ip: "",         // only needed when connecting to a serving tcp instance; set ip or domain name
     dhtPort: null,  // default port is 13331
-    lanPort: null   // default lan port is 13332
-    tcpPort: null,  // default tcp port is 13333
+    lanPort: null,  // default lan port is 13332
+    tcpPort: null   // default tcp port is 13333
   },
   }
 })
