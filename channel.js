@@ -181,7 +181,7 @@ class ChannelDetails extends ChannelDetailsBase {
           if (!this.datesSeen.has(dayTimestamp)) {
             this.datesSeen.add(dayTimestamp)
             this.addVirtualMessage({
-              publicKey: this.name,
+              publicKey: "status",
               postHash: "",
               timestamp: dayTimestamp,
               postType: postTypes.STATUS_DATE_CHANGED /*'status/date-changed' */,

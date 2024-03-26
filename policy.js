@@ -14,7 +14,7 @@ class JoinedPolicy extends ReplicationPolicy {
     super()
     if (!opts) { opts = {} }
     this.limit = opts.limit || 0 /* # of posts */ // no limit
-    this.windowSize = opts.windowSize || 2 * 7 * 24 * 60 * 60 * 1000  /* 2 weeks in ms */
+    this.windowSize = opts.windowSize || 2 * 10 * 7 * 24 * 60 * 60 * 1000  /* 2 * 10 weeks in ms */
   }
 }
 
@@ -23,7 +23,7 @@ class UnjoinedPolicy extends ReplicationPolicy {
     super()
     if (!opts) { opts = {} }
     this.limit = opts.limit || 1000 /* # of posts */
-    this.windowSize = opts.windowSize || 2 * 7 * 24 * 60 * 60 * 1000  /* 2 weeks in ms */
+    this.windowSize = opts.windowSize || 2 * 10 * 7 * 24 * 60 * 60 * 1000  /* 2 * 10 weeks in ms */
   }
 }
 

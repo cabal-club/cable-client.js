@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // internal deps
+const constants = require("cable.js/constants.js")
 const CableCore = require("cable-core/index.js").CableCore
 const EventsManager = require("cable-core/index.js").EventsManager
 const ChannelDetails = require("./channel.js").ChannelDetails
@@ -29,8 +30,11 @@ function noop () {}
 
 class User {
   constructor(key, name) {
+    this.acceptRole = 1 // default value, changes on setting user info
     this.currentName = name
     this.key = key
+    this.roles = new Map()
+    this.hidden = false
 
     Object.defineProperty(this, 'name', {
       set: (name) => {
@@ -45,9 +49,23 @@ class User {
     })
   }
 
-  isAdmin() { return false }
-  isModerator() { return false }
-  isHidden() { return false }
+  #checkRoleInChannel(ch, cmpRole) {
+    if (this.roles.has(ch)) {
+      if (this.roles.get(ch) === cmpRole) { return true }
+    }
+    if (this.roles.has(constants.CABAL_CONTEXT)) {
+      if (this.roles.get(constants.CABAL_CONTEXT) === cmpRole) { return true }
+    }
+    return false
+  }
+
+  isAdmin(ch) { 
+    return this.#checkRoleInChannel(ch, constants.ADMIN_FLAG)
+  }
+  isModerator(ch) { 
+    return this.#checkRoleInChannel(ch, constants.MOD_FLAG)
+  }
+  isHidden() { return this.hidden }
 }
 
 /* goals:
@@ -127,16 +145,22 @@ class CableClient extends EventEmitter {
     // TODO (2023-08-09): replication policies, accept defaults passed to cable client
     this.policies = {
       JOINED: new replicationPolicy.JoinedPolicy(),
-      DROPPPED: new replicationPolicy.DroppedPolicy(),
+      DROPPED: new replicationPolicy.DroppedPolicy(),
       UNJOINED: new replicationPolicy.UnjoinedPolicy()
     }
+    // `this.moderation` is an instance of cable-core:ModerationSystem and it is populated and updated by cable-core
+    // when the instance has been the following event is fired: `this.core.on("moderation/actions-update")
+    Object.defineProperty(this, 'moderation', {
+      get: () => {
+        return this.core.moderationActions
+      }
+    })
     this.channels = new Map()
     // maps each user's public key to an instance of the User class
     this.users = new Map()
     this._initializeClient(level, opts.config)
-    this.join("default")
-    this.currentChannel = "default"
     this.localUser = new User(this.core.kp.publicKey.toString("hex"), "")
+    // TODO (2024-02-27): use core.getName?
     this.users.set(this.localUser.key, this.localUser)
     setTimeout(() => {
       this._initializeProtocol()
@@ -206,33 +230,93 @@ class CableClient extends EventEmitter {
     this._registerEvents()
     // get joined channels and populate this.channels
     const proceedInit = this.pender.wait("initialize client")
-    this.core.getJoinedChannels((err, channels) => {
-      if (err) { 
-        log("had err %s when getting joined channels from core", err)
-        return proceedInit()
-      }
-      channels.forEach(ch => {
-        this._addChannel(ch, true)
-        const proceedCh = this.pender.wait("joined channel " + ch)
-        this.core.getTopic(ch, (err, topic) => {
-          if (err) { return proceedCh() }
-          this.channels.get(ch).topic = topic
-        })
+    new Promise((res, rej) => {
+      debug("inside created prom")
+      this.core.getJoinedChannels((err, channels) => {
+        if (err) { 
+          log("had err %s when getting joined channels from core", err)
+          return res() && proceedInit()
+        }
 
-        this.core.getUsersInChannel(ch, (err, users) => {
-          debug("users in channel", users)
-          if (err) { return proceedCh() }
-          for (let userKey of users.keys()) {
-            let name = users.get(userKey)
-            this._updateUserName(userKey, name)
-            this.channels.get(ch).addMember(userKey)
-          }
-          this.emit("update")
-          proceedCh()
+        // if we have joined no channels, then join the default channel
+        if (channels.length === 0) {
+          this.join("default")
+          channels.push("default")
+        }
+
+        // initialize the focused channel to "default" if it exists among the joined channels, else to the
+        // lexicographically first channel
+        if (channels.includes("default")) {
+          this.currentChannel = "default"
+        } else {
+          this.currentChannel = channels.sort()[0]
+        }
+
+        const channelPromises = channels.map(ch => {
+          return new Promise((channelRes, rej) => {
+            this._addChannel(ch, true)
+            const proceedCh = this.pender.wait("joined channel " + ch)
+            this.core.getTopic(ch, (err, topic) => {
+              if (err) { return proceedCh() && channelRes() }
+              this.channels.get(ch).topic = topic
+            })
+
+            this.core.getUsersInChannel(ch, (err, users) => {
+              debug("users in channel", users)
+              if (err) { 
+                debug("users in channel had err, returning early")
+                return proceedCh() && channelRes()
+              }
+              for (const [userKey, info] of users) {
+                this._updateUser(userKey, info)
+                this.channels.get(ch).addMember(userKey)
+              }
+              this.emit("update")
+              debug("proceed and channelRes()")
+              proceedCh()
+              channelRes()
+            })
+          })
         })
+        Promise.all(channelPromises).then(res)
       })
-      proceedInit()
+    }).then(() => {
+      // TODO (2024-03-15): register moderation/actions-update + moderation/roles-update and perform the same
+      // operations there
+      const modPromises = []
+
+      modPromises.push(new Promise((res, rej) => { 
+        this.core.getAllModerationActions((err, actions) => {
+          debug("mod actions", actions)
+          return res()
+        })
+      }))
+      // userRoleMap is a map of [publicKey][channel|cabal_context] = <role in channel>
+      modPromises.push(new Promise((res, rej) => { 
+        this.core.getAllRoles((err, userRoleMap) => {
+          debug("all mod roles", userRoleMap)
+          this._setRoles(userRoleMap)
+          return res()
+        })
+      }))
+      Promise.all(modPromises).then(proceedInit)
     })
+  }
+
+  // userRoleMap maps a user's public key to another map. this second map contains the users roles in each channel as
+  // [channel] =>  { role: int constant, since: int timestamp, precedence: boolean }
+  _setRoles(userRoleMap) {
+    debug("incoming userRoleMap %O", userRoleMap)
+    for (const [userkey, rolesMap] of userRoleMap) {
+      debug("key %s rolesMap %O", userkey, rolesMap)
+      this._getUser(userkey).roles = rolesMap
+    }
+  }
+
+  _getUser(publicKey) {
+    // ensures we always have a user instantiation ready
+    this._addUser(publicKey)
+    return this.users.get(publicKey)
   }
 
   _addUser(publicKey) {
@@ -241,15 +325,12 @@ class CableClient extends EventEmitter {
       this.users.set(publicKey, u)
     }
   }
-  _updateUserName(publicKey, name="") {
-    debug("add user, new name %s", name)
-    if (name.length === 64) { name = "" }
-    if (!this.users.has(publicKey)) {
-      const u = new User(publicKey, name)
-      this.users.set(publicKey, u)
-    } else {
-      this.users.get(publicKey).name = name
-    }
+
+  _updateUser(publicKey, info) {
+    debug("add user, new name %s", info.name)
+    const u = this._getUser(publicKey)
+    u.name = info.name
+    u.acceptRole = info.acceptRole
   }
 
   // listen for events that are emitted from cable-core when it has processed new posts
@@ -288,6 +369,7 @@ class CableClient extends EventEmitter {
       this._addChannel(channel)
       this.channels.get(channel).addMember(publicKey)
       log("channels/join: %s joined by %s", channel, publicKey)
+      this.emit("update")
     })
 
     // post/leave
@@ -296,6 +378,7 @@ class CableClient extends EventEmitter {
       this._addChannel(channel)
       this.channels.get(channel).removeMember(publicKey)
       log("channels/leave: %s left by %s", channel, publicKey)
+      this.emit("update")
     })
     
     // channel list response
@@ -307,10 +390,83 @@ class CableClient extends EventEmitter {
 
     // post/info key:name
     this.events.register("users", this.core, "users/name-changed", ({ publicKey, name }) => {
-      this._addUser(publicKey)
-      this.users.get(publicKey).name = name
+      this._getUser(publicKey).name = name
       log("users/name-changed: %s set name to %s", publicKey, name)
       this.emit("update")
+    })
+
+    this.events.register("moderation", this.core, "moderation/actions-update", () => {
+      debug("mod/actions-update: %O", this.moderation)
+      // TODO (2024-03-26): increase capability
+      // - hide per channel
+      // - support toggling unhide/undrop/unblock
+      // for (const pubkey of this.moderation.getHiddenUsers()) {
+      //   this._getUser(pubkey).hidden = true
+      // }
+      this.emit("update")
+    })
+    this.events.register("moderation", this.core, "moderation/roles-update", (userRoleMap) => {
+      this._setRoles(userRoleMap)
+      this.emit("update")
+    })
+    this.events.register("moderation", this.core, "moderation/action", ({ publicKey, action, recipients, reason, channel }) => {
+      debug(`mod/action: ${action} recps ${recipients} ${typeof recipients}`)
+      // note: do not take any actions based on this event, they are done in moderation/actions-update, this is just
+      // informative
+ 
+      if (publicKey === this.localUser.key) { 
+        recipients.forEach(pubkey => {
+          const u = this._getUser(pubkey)
+          switch (action) {
+            case constants.ACTION_HIDE_USER:
+            u.hidden = true
+            break
+            case constants.ACTION_UNHIDE_USER:
+            u.hidden = false
+            break
+          }
+        })
+        // if the author is the local user, return early and don't a status message (they've already received a prompt from executing the command)
+        return 
+      }
+      let verb
+      switch (action) {
+        case constants.ACTION_HIDE_USER:
+          verb = "hid"
+          break
+        case constants.ACTION_UNHIDE_USER:
+          verb = "unhid"
+      }
+      const names = recipients.map(pubkey => this.users.get(pubkey).name)
+      const author = this.users.get(publicKey).name
+      const reasonString = `${reason.length > 0 ? '(reason: ' + reason + ')' : ''}`
+      let text
+      if (recipients.length > 4) {
+        text = `${author} ${verb} ${recipients.length} users ${reasonString}`
+      } else {
+        text = `${author} ${verb} ${names.join(',')} ${reasonString}`
+      }
+      this.addStatusMessage({ text }, this.currentChannel)
+      this.emit("update")
+    })
+    this.events.register("moderation", this.core, "moderation/role", () => {
+    })
+    this.events.register("moderation", this.core, "moderation/block", () => {
+    })
+    this.events.register("moderation", this.core, "moderation/unblock", () => {
+    })
+
+    // post/moderation + post/block + post/unblock initialized
+    this.events.register("moderation", this.core, "moderation/init", () => {
+      log("moderation/init fired, moderation system hidden users %O", this.moderation.getHiddenUsers())
+      for (const pubkey of this.moderation.getHiddenUsers()) {
+        this._getUser(pubkey).hidden = true
+      }
+      log("users post mod init", this.users)
+      this.emit("update")
+
+      // moderation/init only fires once so we don't need to keep the listener around
+      this.events.deregister("moderation", "moderation/init")
     })
     proceedEvents()
   }
@@ -319,6 +475,8 @@ class CableClient extends EventEmitter {
   _initializeProtocol() {
     const log = startDebug("initialize-protocol")
     log("get joined channels")
+
+    // TODO (2024-03-20): initialize moderation state request
     
     // operate on joined channels
     const proceedProtocolJoined = this.pender.wait("init protocol: joined")
@@ -334,6 +492,12 @@ class CableClient extends EventEmitter {
         const postsReq = this.core.requestPosts(ch, timeWindowFromOffset(policy.windowSize), 0, DEFAULT_TTL, policy.limit)
         log(postsReq)
       })
+
+      // request moderation state (post/{moderation, role, block, unblock} for all joined channels
+      // TODO (2024-03-25): use larger time window
+      const modReq = this.core.requestModeration(DEFAULT_TTL, channels, 1, timeWindowFromOffset(policy.windowSize))
+      log("request moderation state for all joined channels", modReq)
+
       proceedProtocolJoined()
     })
 
@@ -500,6 +664,11 @@ class CableClient extends EventEmitter {
     this.channels.get(channel).getMembers().forEach(userKey => {
       obj[userKey] = this.users.get(userKey)
     })
+    debug("get channel (%s) members: %O", channel, obj)
+    debug("%s: all users %O", this.users, channel)
+    for (const [key, user] of this.users) {
+      debug("user %s %O", key, user)
+    }
     return obj
   }
   getAllChannels() {
@@ -533,13 +702,18 @@ class CableClient extends EventEmitter {
     this._addChannel(channel, true)
     if (focus) { this.focus(channel) }
     this.core.join(channel)
+
+    // TODO (2024-03-25): also fire off & get channel state for the newly joined channel?
+    // TODO (2024-03-25): fire off a this.emit("update")?
+   
     const postsReq = this.core.requestPosts(channel, timeWindowFromOffset(this.policies.JOINED.windowSize), 0, DEFAULT_TTL, this.policies.JOINED.limit)
     // make sure we populate our channels object with the current members of the channel we are joining
     this.core.getUsersInChannel(channel, (err, users) => {
-      for (let userKey of users.keys()) {
-        const name = users.get(userKey)
-        this._updateUserName(userKey, name)
-        this.channels.get(channel).addMember(userKey)
+      debug("users %O", users)
+      debug("users err %O", err)
+      for (const [userKey, obj] of users) {
+        debug("info", obj)
+        this._updateUser(userKey, obj)
       }
     })
   }
@@ -558,7 +732,7 @@ class CableClient extends EventEmitter {
       if (cb) { cb() }
     })
   }
-  addStatusMessage(statusMessage, channel) {
+  addStatusMessage(statusMessage, channel=this.currentChannel) {
     if (!this.channels.has(channel)) { return }
     this.channels.get(channel).addVirtualMessage(statusMessage)
     debug("add status message %s to channel %s", statusMessage, channel)
@@ -609,35 +783,4 @@ class CableClient extends EventEmitter {
   }
 }
 
-/*
-// alt 1: ts-based
-getChat(channel, { limit: 200 })
-getChat(channel, { tsOlderThan: 1hourago, limit: 200 })
-getChat(channel, { tsOlderThan: 0, tsNewerThan: 2hoursAgo, limit: 200 })
-getChat(channel, { tsNewerThan: 2hoursAgo, limit: 200 })
-
-// alt 2: hash-based
-getChat(channel, { limit: 200 })
-getChat(channel, { olderThanHash: hash, limit: 200 })
-getChat(channel, { newerThanHash: hash, olderThanHash: hash, limit: 200 })
-// use links + ts info to causally sort postArray and return sorted 
-const sorted = _causalSort(postArray)
-*/
-
-// paginate is still speculative; unsure how to make it work good in practice
-// i think get chat with time+hash anchors and limits is better?
-
-// scroll up
-// details.paginate({clientOptions, direction: intoHistory}).render(messages)
-// scroll down
-// details.paginate({clientOptions, direction: intoFuture}).render(messages)
-
-// details.on("chat-message", render(channel, hash, msg))
-// details.on("topic", setTopic(channel, hash, msg))
-// details.on("message-removed", updateRender(channel, hash, { remove:true }))
-// details.on("name-changed", updateRender(pubkey, newName))
-// details.on("new-channel", (channel))
-
-// // Q: should we render deleted post as "*this post was deleted*"? e.g. with a virtual message `type: deleted`
-// details.deleteSingle(hashMsg)
 module.exports = CableClient
