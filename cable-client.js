@@ -397,11 +397,21 @@ class CableClient extends EventEmitter {
       this.emit("update")
     })
 
-    this.events.register("moderation", this.core, "moderation/actions-update", () => {
-      debug("mod/actions-update: %O", this.moderation)
-      for (const [userKey, user] of this.users) {
-        debug("mod/actions-update: %s hidden? %s", userKey, this.moderation.isUserHidden(userKey))
-        user.hidden = this.moderation.isUserHidden(userKey)
+    this.events.register("moderation", this.core, "moderation/actions-update", (post) => {
+      debug("mod/actions-update: %O", post)
+      if (post.postType === constants.MODERATION_POST) {
+        switch (post.action) {
+          case constants.ACTION_HIDE_USER:
+          case constants.ACTION_UNHIDE_USER:
+            for (const pubkeyBuf of post.recipients) {
+              const userKey = b4a.toString(pubkeyBuf, "hex")
+              const user = this._getUser(userKey)
+              user.hidden = this.moderation.isUserHidden(userKey)
+            }
+            break
+        }
+      } else if ([constants.BLOCK_POST, constants.UNBLOCK_POST].includes(action.postType)) {
+        // todo logic :))
         // user.blocked = this.moderation.isUserBlocked(userKey)
       }
       this.emit("update")
