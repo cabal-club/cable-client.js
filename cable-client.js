@@ -65,7 +65,9 @@ class User {
   isModerator(ch) { 
     return this.#checkRoleInChannel(ch, constants.MOD_FLAG)
   }
-  isHidden() { return this.hidden }
+  isHidden() {
+    return this.hidden 
+  }
 }
 
 /* goals:
@@ -397,12 +399,11 @@ class CableClient extends EventEmitter {
 
     this.events.register("moderation", this.core, "moderation/actions-update", () => {
       debug("mod/actions-update: %O", this.moderation)
-      // TODO (2024-03-26): increase capability
-      // - hide per channel
-      // - support toggling unhide/undrop/unblock
-      // for (const pubkey of this.moderation.getHiddenUsers()) {
-      //   this._getUser(pubkey).hidden = true
-      // }
+      for (const [userKey, user] of this.users) {
+        debug("mod/actions-update: %s hidden? %s", userKey, this.moderation.isUserHidden(userKey))
+        user.hidden = this.moderation.isUserHidden(userKey)
+        // user.blocked = this.moderation.isUserBlocked(userKey)
+      }
       this.emit("update")
     })
     this.events.register("moderation", this.core, "moderation/roles-update", (userRoleMap) => {
@@ -415,17 +416,6 @@ class CableClient extends EventEmitter {
       // informative
  
       if (publicKey === this.localUser.key) { 
-        recipients.forEach(pubkey => {
-          const u = this._getUser(pubkey)
-          switch (action) {
-            case constants.ACTION_HIDE_USER:
-            u.hidden = true
-            break
-            case constants.ACTION_UNHIDE_USER:
-            u.hidden = false
-            break
-          }
-        })
         // if the author is the local user, return early and don't a status message (they've already received a prompt from executing the command)
         return 
       }
