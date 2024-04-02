@@ -95,6 +95,7 @@ class CabalDetails extends EventEmitter {
   getChannelMembers() { return this.cc.getChannelMembers() }
   addStatusMessage(m) { this.cc.addStatusMessage(m, this.getCurrentChannel())  }
   processLine(line, cb) { this.cc.processLine(line, cb) }
+  publishNick(nick, done) { this.cc.setName(nick, done) }
   publishMessage() { }
 }
 
