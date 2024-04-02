@@ -452,6 +452,9 @@ function flagCmd (cmd, cabal, res, arg) {
   }
 
   const recipient = cabal.users.get(id)
+  if (id === cabal.localUser.key) {
+    return res.error(`cannot issue roles or moderation actions on self`)
+  }
   const peerName = recipient.name
   const placeModifier = channel === '' ? 'for the entire cabal' : `in channel ${channel}` 
   if (['admin', 'mod'].includes(flag)) {
@@ -464,7 +467,7 @@ function flagCmd (cmd, cabal, res, arg) {
     } else if (!/^un/.test(cmd) && flag === 'admin' && recipient.isAdmin(channel)) {
       return res.error(`${peerName} is already an admin ${placeModifier}`)
     }
-  } else {
+  } else if (flag === "hide") {
     if (/^un/.test(cmd)) {
       if (!recipient.isHidden(channel)) {
         return res.error(`cannot unhide ${peerName}: they are not hidden`)
@@ -474,6 +477,16 @@ function flagCmd (cmd, cabal, res, arg) {
         return res.error(`${peerName} is already hidden`)
       }
     }
+  } else if (flag === "block") {
+    if (/^un/.test(cmd)) {
+      if (!recipient.isBlocked(channel)) {
+        return res.error(`cannot unblock ${peerName}: they are not blocked`)
+      }
+    } else {
+      if (recipient.isBlocked(channel)) {
+        return res.error(`${peerName} is already blocked`)
+      }
+    }
   }
 	
   const timestamp = +(new Date())
@@ -481,7 +494,11 @@ function flagCmd (cmd, cabal, res, arg) {
   let role
   let action
   // TODO (2024-03-20): block + unblock - add option parsing for "{un,}drop" and "notify"
-  const DROP = 1
+
+  // TODO (2024-04-02): hard coding the options for drop/undrop/notify for alpha version of blocking
+  const DROP = 0
+  const NOTIFY = 1
+  const UNDROP = 1
   switch (flag) {
     case "admin":
       role = (type === "add") ? constants.ADMIN_FLAG : constants.USER_FLAG

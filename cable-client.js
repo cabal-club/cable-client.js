@@ -29,12 +29,14 @@ const CHANNEL_LIST_RENEWAL_INTERVAL = 30 * 60 * 1000 // every 30 minutes
 function noop () {}
 
 class User {
-  constructor(key, name) {
+  constructor(key, name, hiddenFn, blockedFn) {
     this.acceptRole = 1 // default value, changes on setting user info
     this.currentName = name
     this.key = key
     this.roles = new Map()
-    this.hidden = false
+    // maps channel contexts to the user's state in that context (entire cabal or a specific channel)
+    // TODO (2024-04-01): currently only covers hidden (as a boolean) 
+    this.modState = new Map()
 
     Object.defineProperty(this, 'name', {
       set: (name) => {
@@ -47,6 +49,8 @@ class User {
         return this.key.slice(0,8)
       }
     })
+    this.queryHidden = hiddenFn
+    this.queryBlocked = blockedFn
   }
 
   #checkRoleInChannel(ch, cmpRole) {
@@ -65,8 +69,11 @@ class User {
   isModerator(ch) { 
     return this.#checkRoleInChannel(ch, constants.MOD_FLAG)
   }
-  isHidden() {
-    return this.hidden 
+  isHidden(ch) {
+    return this.queryHidden(this.key, ch)
+  }
+  isBlocked() {
+    return this.queryBlocked(this.key)
   }
 }
 
@@ -161,7 +168,7 @@ class CableClient extends EventEmitter {
     // maps each user's public key to an instance of the User class
     this.users = new Map()
     this._initializeClient(level, opts.config)
-    this.localUser = new User(this.core.kp.publicKey.toString("hex"), "")
+    this.localUser = this._getUser(this.core.kp.publicKey.toString("hex"))
     // TODO (2024-02-27): use core.getName?
     this.users.set(this.localUser.key, this.localUser)
     setTimeout(() => {
@@ -323,7 +330,7 @@ class CableClient extends EventEmitter {
 
   _addUser(publicKey) {
     if (!this.users.has(publicKey)) {
-      const u = new User(publicKey, "")
+      const u = new User(publicKey, "", (pubkey, ch) => { return this.moderation.isUserHidden(pubkey, ch) }, (pubkey) => { return this.moderation.isUserBlocked(pubkey) })
       this.users.set(publicKey, u)
     }
   }
@@ -385,7 +392,9 @@ class CableClient extends EventEmitter {
     
     // channel list response
     this.events.register("channels", this.core, "channels/add", ({ channels }) => {
-      channels.forEach(channel => { this._addChannel(channel) })
+      channels.forEach(channel => { 
+        this._handleNewChannel(channel, false)
+      })
       log("channels/add: channel list response replied with %O", channels)
       this.emit("update")
     })
@@ -399,21 +408,6 @@ class CableClient extends EventEmitter {
 
     this.events.register("moderation", this.core, "moderation/actions-update", (post) => {
       debug("mod/actions-update: %O", post)
-      if (post.postType === constants.MODERATION_POST) {
-        switch (post.action) {
-          case constants.ACTION_HIDE_USER:
-          case constants.ACTION_UNHIDE_USER:
-            for (const pubkeyBuf of post.recipients) {
-              const userKey = b4a.toString(pubkeyBuf, "hex")
-              const user = this._getUser(userKey)
-              user.hidden = this.moderation.isUserHidden(userKey)
-            }
-            break
-        }
-      } else if ([constants.BLOCK_POST, constants.UNBLOCK_POST].includes(action.postType)) {
-        // todo logic :))
-        // user.blocked = this.moderation.isUserBlocked(userKey)
-      }
       this.emit("update")
     })
     this.events.register("moderation", this.core, "moderation/roles-update", (userRoleMap) => {
@@ -440,6 +434,27 @@ class CableClient extends EventEmitter {
       const names = recipients.map(pubkey => this.users.get(pubkey).name)
       const author = this.users.get(publicKey).name
       const reasonString = `${reason.length > 0 ? '(reason: ' + reason + ')' : ''}`
+      const channelString = `${channel.length > 0 ? 'in channel ' + channel : ''}`
+      let text
+      if (recipients.length > 4) {
+        text = `${author} ${verb} ${recipients.length} users ${channelString} ${reasonString}`
+      } else {
+        text = `${author} ${verb} ${names.join(',')} ${channelString} ${reasonString}`
+      }
+      this.addStatusMessage({ text }, this.currentChannel)
+      this.emit("update")
+    })
+    this.events.register("moderation", this.core, "moderation/role", () => {
+    })
+    this.events.register("moderation", this.core, "moderation/block", ({ publicKey, reason, recipients }) => {
+      if (publicKey === this.localUser.key) { 
+        // if the author is the local user, return early and don't a status message (they've already received a prompt from executing the command)
+        return 
+      }
+      const verb = "blocked"
+      const names = recipients.map(pubkey => this.users.get(pubkey).name)
+      const author = this.users.get(publicKey).name
+      const reasonString = `${reason.length > 0 ? '(reason: ' + reason + ')' : ''}`
       let text
       if (recipients.length > 4) {
         text = `${author} ${verb} ${recipients.length} users ${reasonString}`
@@ -449,18 +464,32 @@ class CableClient extends EventEmitter {
       this.addStatusMessage({ text }, this.currentChannel)
       this.emit("update")
     })
-    this.events.register("moderation", this.core, "moderation/role", () => {
-    })
-    this.events.register("moderation", this.core, "moderation/block", () => {
-    })
-    this.events.register("moderation", this.core, "moderation/unblock", () => {
+    this.events.register("moderation", this.core, "moderation/unblock", ({ publicKey, reason, recipients }) => {
+      if (publicKey === this.localUser.key) { 
+        // if the author is the local user, return early and don't a status message (they've already received a prompt from executing the command)
+        return 
+      }
+      const verb = "unblocked"
+      const names = recipients.map(pubkey => this.users.get(pubkey).name)
+      const author = this.users.get(publicKey).name
+      const reasonString = `${reason.length > 0 ? '(reason: ' + reason + ')' : ''}`
+      let text
+      if (recipients.length > 4) {
+        text = `${author} ${verb} ${recipients.length} users ${reasonString}`
+      } else {
+        text = `${author} ${verb} ${names.join(',')} ${reasonString}`
+      }
+      this.addStatusMessage({ text }, this.currentChannel)
+      this.emit("update")
     })
 
     // post/moderation + post/block + post/unblock initialized
     this.events.register("moderation", this.core, "moderation/init", () => {
       log("moderation/init fired, moderation system hidden users %O", this.moderation.getHiddenUsers())
-      for (const pubkey of this.moderation.getHiddenUsers()) {
-        this._getUser(pubkey).hidden = true
+      for (const ch of this.channels.keys()) {
+        for (const pubkey of this.moderation.getHiddenUsers()) {
+        user._setHidden(this.moderation.isUserHidden(userKey, ch))
+        }
       }
       log("users post mod init", this.users)
       this.emit("update")
@@ -537,14 +566,15 @@ class CableClient extends EventEmitter {
 
   // we received notice of a new channel, do cable-client book keeping and some protocol stuff
   // TODO (2023-08-09): hook up to future event like `this.core.on("new-channel")`
-  _handleNewChannel (channel) {
+  _handleNewChannel (channel, joined) {
     this._addChannel(channel)
     // request basic state for the channel such as its members and the current topic
-    const stateReq = this.core.requestState(ch, DEFAULT_TTL, 1)
+    const stateReq = this.core.requestState(channel, DEFAULT_TTL, 1)
     // despite not having joined the channel, we make sure to requests some posts to make sure it has some backlog if we
     // do decide to join it
-    const policy = this.policies.UNJOINED 
-    const postsReq = this.core.requestPosts(ch, timeWindowFromOffset(policy.windowSize), 0, DEFAULT_TTL, policy.limit)
+    const policy = joined ? this.policies.JOINED : this.policies.UNJOINED 
+    const postsReq = this.core.requestPosts(channel, timeWindowFromOffset(policy.windowSize), 0, DEFAULT_TTL, policy.limit)
+    const modReq = this.core.requestModeration(DEFAULT_TTL, [channel], 1, timeWindowFromOffset(policy.windowSize))
   }
 
   focus(channel) {
@@ -700,13 +730,10 @@ class CableClient extends EventEmitter {
     if (this.channels.has(channel) && this.channels.get(channel).joined) { return }
     debug("join channel %s", channel)
     this._addChannel(channel, true)
+    this._handleNewChannel(channel, true)
     if (focus) { this.focus(channel) }
     this.core.join(channel)
 
-    // TODO (2024-03-25): also fire off & get channel state for the newly joined channel?
-    // TODO (2024-03-25): fire off a this.emit("update")?
-   
-    const postsReq = this.core.requestPosts(channel, timeWindowFromOffset(this.policies.JOINED.windowSize), 0, DEFAULT_TTL, this.policies.JOINED.limit)
     // make sure we populate our channels object with the current members of the channel we are joining
     this.core.getUsersInChannel(channel, (err, users) => {
       debug("users %O", users)
@@ -716,6 +743,7 @@ class CableClient extends EventEmitter {
         this._updateUser(userKey, obj)
       }
     })
+    this.emit("update")
   }
 
   leave(channel) {
