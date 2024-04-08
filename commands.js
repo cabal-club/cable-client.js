@@ -439,8 +439,8 @@ function flagCmd (cmd, cabal, res, arg) {
   const type = /^un/.test(cmd) ? 'remove' : 'add'
   const flag = cmd.replace(/^un/, '')
   const options = args.slice(1).join(' ') // if no --<option> flags are found, assume `options` only contains the reason
-
-  let { channel, reason, isPrivate } = extractModerationOptions(options, "", options, false) // if --channel option missin: assume default channel is '' i.e. the cabal context
+  const defaultReason = options.includes("--") ? "" : options
+  let { channel, reason, isPrivate } = extractModerationOptions(options, "", defaultReason, false) // if --channel option missin: assume default channel is '' i.e. the cabal context
   // cable-core accepts privacy as a 0 or 1
   let privacy = 0
   if (isPrivate) {
