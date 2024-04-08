@@ -395,7 +395,7 @@ class CableClient extends EventEmitter {
       channels.forEach(channel => { 
         this._handleNewChannel(channel, false)
       })
-      log("channels/add: channel list response replied with %O", channels)
+      log("channels/add: %O", channels)
       this.emit("update")
     })
 
@@ -485,15 +485,8 @@ class CableClient extends EventEmitter {
 
     // post/moderation + post/block + post/unblock initialized
     this.events.register("moderation", this.core, "moderation/init", () => {
-      log("moderation/init fired, moderation system hidden users %O", this.moderation.getHiddenUsers())
-      for (const ch of this.channels.keys()) {
-        for (const pubkey of this.moderation.getHiddenUsers()) {
-        user._setHidden(this.moderation.isUserHidden(userKey, ch))
-        }
-      }
-      log("users post mod init", this.users)
+      log("moderation/init fired")
       this.emit("update")
-
       // moderation/init only fires once so we don't need to keep the listener around
       this.events.deregister("moderation", "moderation/init")
     })
@@ -567,6 +560,8 @@ class CableClient extends EventEmitter {
   // we received notice of a new channel, do cable-client book keeping and some protocol stuff
   // TODO (2023-08-09): hook up to future event like `this.core.on("new-channel")`
   _handleNewChannel (channel, joined) {
+    if (this.channels.has(channel)) { return }
+    debug("handle new channel %s (joined %s)", channel, joined)
     this._addChannel(channel)
     // request basic state for the channel such as its members and the current topic
     const stateReq = this.core.requestState(channel, DEFAULT_TTL, 1)
@@ -694,11 +689,7 @@ class CableClient extends EventEmitter {
     this.channels.get(channel).getMembers().forEach(userKey => {
       obj[userKey] = this.users.get(userKey)
     })
-    debug("get channel (%s) members: %O", channel, obj)
-    debug("%s: all users %O", this.users, channel)
-    for (const [key, user] of this.users) {
-      debug("user %s %O", key, user)
-    }
+    debug("get channel (%s) members", channel)
     return obj
   }
   getAllChannels() {
@@ -730,7 +721,7 @@ class CableClient extends EventEmitter {
     if (this.channels.has(channel) && this.channels.get(channel).joined) { return }
     debug("join channel %s", channel)
     this._addChannel(channel, true)
-    this._handleNewChannel(channel, true)
+    // TODO (2024-04-03): replace channel time range request on newly joined channel with a ctr using policy.JOINED's params
     if (focus) { this.focus(channel) }
     this.core.join(channel)
 
