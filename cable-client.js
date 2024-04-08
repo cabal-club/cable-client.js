@@ -415,10 +415,8 @@ class CableClient extends EventEmitter {
       this.emit("update")
     })
     this.events.register("moderation", this.core, "moderation/action", ({ publicKey, action, recipients, reason, channel }) => {
-      debug(`mod/action: ${action} recps ${recipients} ${typeof recipients}`)
-      // note: do not take any actions based on this event, they are done in moderation/actions-update, this is just
-      // informative
- 
+      debug(`mod/action: ${action} recps ${recipients}`)
+      // note: do not take any actions based on this event, that is tracked and handled by `this.moderation` 
       if (publicKey === this.localUser.key) { 
         // if the author is the local user, return early and don't a status message (they've already received a prompt from executing the command)
         return 
@@ -430,19 +428,9 @@ class CableClient extends EventEmitter {
           break
         case constants.ACTION_UNHIDE_USER:
           verb = "unhid"
+          break
       }
-      const names = recipients.map(pubkey => this.users.get(pubkey).name)
-      const author = this.users.get(publicKey).name
-      const reasonString = `${reason.length > 0 ? '(reason: ' + reason + ')' : ''}`
-      const channelString = `${channel.length > 0 ? 'in channel ' + channel : ''}`
-      let text
-      if (recipients.length > 4) {
-        text = `${author} ${verb} ${recipients.length} users ${channelString} ${reasonString}`
-      } else {
-        text = `${author} ${verb} ${names.join(',')} ${channelString} ${reasonString}`
-      }
-      this.addStatusMessage({ text }, this.currentChannel)
-      this.emit("update")
+      this._addModerationMessage(publicKey, verb, recipients, reason, channel)
     })
     this.events.register("moderation", this.core, "moderation/role", () => {
     })
@@ -451,36 +439,14 @@ class CableClient extends EventEmitter {
         // if the author is the local user, return early and don't a status message (they've already received a prompt from executing the command)
         return 
       }
-      const verb = "blocked"
-      const names = recipients.map(pubkey => this.users.get(pubkey).name)
-      const author = this.users.get(publicKey).name
-      const reasonString = `${reason.length > 0 ? '(reason: ' + reason + ')' : ''}`
-      let text
-      if (recipients.length > 4) {
-        text = `${author} ${verb} ${recipients.length} users ${reasonString}`
-      } else {
-        text = `${author} ${verb} ${names.join(',')} ${reasonString}`
-      }
-      this.addStatusMessage({ text }, this.currentChannel)
-      this.emit("update")
+      this._addModerationMessage(publicKey, "blocked", recipients, reason, null)
     })
     this.events.register("moderation", this.core, "moderation/unblock", ({ publicKey, reason, recipients }) => {
       if (publicKey === this.localUser.key) { 
         // if the author is the local user, return early and don't a status message (they've already received a prompt from executing the command)
         return 
       }
-      const verb = "unblocked"
-      const names = recipients.map(pubkey => this.users.get(pubkey).name)
-      const author = this.users.get(publicKey).name
-      const reasonString = `${reason.length > 0 ? '(reason: ' + reason + ')' : ''}`
-      let text
-      if (recipients.length > 4) {
-        text = `${author} ${verb} ${recipients.length} users ${reasonString}`
-      } else {
-        text = `${author} ${verb} ${names.join(',')} ${reasonString}`
-      }
-      this.addStatusMessage({ text }, this.currentChannel)
-      this.emit("update")
+      this._addModerationMessage(publicKey, "unblocked", recipients, reason, null)
     })
 
     // post/moderation + post/block + post/unblock initialized
@@ -491,6 +457,24 @@ class CableClient extends EventEmitter {
       this.events.deregister("moderation", "moderation/init")
     })
     proceedEvents()
+  }
+
+  _addModerationMessage(authorKey, verb, recipients, reason, channel) {
+      const names = recipients.map(pubkey => this.users.get(pubkey).name)
+      const author = this.users.get(authorKey).name
+      debug("zchannel '%s'", channel)
+      debug("zreason '%s'", reason)
+      const reasonString = (reason.length > 0) ? `(reason: "${reason}")` : ''
+      const channelString = (channel && channel.length > 0 && channel !== constants.CABAL_CONTEXT) ? `in channel ${channel} `: ''
+      let text
+      if (recipients.length > 4) {
+        text = `${author} ${verb} ${recipients.length} users ${channelString}${reasonString}`
+      } else {
+        text = `${author} ${verb} ${names.join(',')} ${channelString}${reasonString}`
+      }
+      this.addStatusMessage({ text }, this.currentChannel)
+
+      this.emit("update")
   }
 
   // handles all initial cable-specific protocol bootstrapping
