@@ -1,6 +1,6 @@
 {
   "name": "cable-client",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "client api for building chat clients ontop of the cable protocol",
   "main": "cable-client.js",
   "dependencies": {
