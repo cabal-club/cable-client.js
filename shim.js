@@ -19,6 +19,7 @@ const path = require("path")
 const { Level } = require("level")
 const { MemoryLevel } = require("memory-level")
 const readOrGenerateKeypair = require("./keypair.js")
+const raf = require("random-access-file")
 const mkdirp = require('mkdirp') // note: check to make sure this module doesn't throw after browserify
 
 class CabalDetails extends EventEmitter {
@@ -36,7 +37,7 @@ class CabalDetails extends EventEmitter {
     const keypath = path.join(opts.config.dbdir, opts.key, "keypair.json")
     mkdirp.sync(path.dirname(keypath))
    
-    readOrGenerateKeypair(opts.config.keystore, keypath, opts.config.temp, (keypair) => {
+    readOrGenerateKeypair(raf, keypath, opts.config.temp, (keypair) => {
       opts.config.keypair = keypair
       this.cc = new CableClient(level, opts)
       this.cc.ready(() => { done() })

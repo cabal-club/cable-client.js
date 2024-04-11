@@ -16,6 +16,7 @@
     "memory-level": "1.0.0",
     "mkdirp": "^3.0.1",
     "monotonic-timestamp": "0.0.9",
+    "random-access-file": "4.0.7",
     "varint": "6.0.0",
     "xdg-portable": "10.6.0"
   },
