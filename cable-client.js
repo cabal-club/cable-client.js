@@ -280,7 +280,7 @@ class CableClient extends EventEmitter {
                 this._updateUser(userKey, info)
                 this.channels.get(ch).addMember(userKey)
               }
-              this.emit("update")
+              this._emitUpdate()
               debug("proceed and channelRes()")
               proceedCh()
               channelRes()
@@ -342,6 +342,15 @@ class CableClient extends EventEmitter {
     u.acceptRole = info.acceptRole
   }
 
+  // debounces the general purpose 'update'-type event
+  _emitUpdate() {
+    const createTimeout = () => { return setTimeout(() => { this.emit("update") }, 10) }
+    if (this._updateTimer) {
+      clearTimeout(this._updateTimer)
+    } 
+    this._updateTimer = createTimeout()
+  }
+
   // listen for events that are emitted from cable-core when it has processed new posts
   _registerEvents() {
     const proceedEvents = this.pender.wait("register events")
@@ -351,7 +360,7 @@ class CableClient extends EventEmitter {
       this._addUser(publicKey)
       this._addChannel(channel)
       log("chat/add: new post in %s %O (hash %s) by %s", channel, post, hash, publicKey)
-      this.emit("update")
+      this._emitUpdate()
     })
 
     // post/delete
@@ -360,7 +369,7 @@ class CableClient extends EventEmitter {
       this._addUser(publicKey)
       this._addChannel(channel)
       log("chat/remove: (TODO in cli view) %s removed post with hash %s from channel", publicKey, hash, channel)
-      this.emit("update")
+      this._emitUpdate()
     })
 
     // post/topic
@@ -369,7 +378,7 @@ class CableClient extends EventEmitter {
       this._addChannel(channel)
       this.channels.get(channel).topic = topic
       log("channels/topic: %s topic set to %s by %s", channel, topic, publicKey)
-      this.emit("update")
+      this._emitUpdate()
     })
 
     // post/join
@@ -378,7 +387,7 @@ class CableClient extends EventEmitter {
       this._addChannel(channel)
       this.channels.get(channel).addMember(publicKey)
       log("channels/join: %s joined by %s", channel, publicKey)
-      this.emit("update")
+      this._emitUpdate()
     })
 
     // post/leave
@@ -387,7 +396,7 @@ class CableClient extends EventEmitter {
       this._addChannel(channel)
       this.channels.get(channel).removeMember(publicKey)
       log("channels/leave: %s left by %s", channel, publicKey)
-      this.emit("update")
+      this._emitUpdate()
     })
     
     // channel list response
@@ -396,23 +405,23 @@ class CableClient extends EventEmitter {
         this._handleNewChannel(channel, false)
       })
       log("channels/add: %O", channels)
-      this.emit("update")
+      this._emitUpdate()
     })
 
     // post/info key:name
     this.events.register("users", this.core, "users/name-changed", ({ publicKey, name }) => {
       this._getUser(publicKey).name = name
       log("users/name-changed: %s set name to %s", publicKey, name)
-      this.emit("update")
+      this._emitUpdate()
     })
 
     this.events.register("moderation", this.core, "moderation/actions-update", (post) => {
       debug("mod/actions-update: %O", post)
-      this.emit("update")
+      this._emitUpdate()
     })
     this.events.register("moderation", this.core, "moderation/roles-update", (userRoleMap) => {
       this._setRoles(userRoleMap)
-      this.emit("update")
+      this._emitUpdate()
     })
     this.events.register("moderation", this.core, "moderation/action", ({ publicKey, action, recipients, reason, channel }) => {
       debug(`mod/action: ${action} recps ${recipients}`)
@@ -452,7 +461,7 @@ class CableClient extends EventEmitter {
     // post/moderation + post/block + post/unblock initialized
     this.events.register("moderation", this.core, "moderation/init", () => {
       log("moderation/init fired")
-      this.emit("update")
+      this._emitUpdate()
       // moderation/init only fires once so we don't need to keep the listener around
       this.events.deregister("moderation", "moderation/init")
     })
@@ -474,7 +483,7 @@ class CableClient extends EventEmitter {
       }
       this.addStatusMessage({ text }, this.currentChannel)
 
-      this.emit("update")
+      this._emitUpdate()
   }
 
   // handles all initial cable-specific protocol bootstrapping
@@ -718,7 +727,7 @@ class CableClient extends EventEmitter {
         this._updateUser(userKey, obj)
       }
     })
-    this.emit("update")
+    this._emitUpdate()
   }
 
   leave(channel) {
@@ -731,7 +740,7 @@ class CableClient extends EventEmitter {
     if (!cb) { cb = noop }
     debug("post %s to channel %s", text, channel)
     this.core.postText(channel, text, () => {
-      this.emit("update")
+      this._emitUpdate()
       if (cb) { cb() }
     })
   }
@@ -739,13 +748,13 @@ class CableClient extends EventEmitter {
     if (!this.channels.has(channel)) { return }
     this.channels.get(channel).addVirtualMessage(statusMessage)
     debug("add status message %s to channel %s", statusMessage, channel)
-    this.emit("update")
+    this._emitUpdate()
   }
   clearStatusMessages(channel) {
     if (!this.channels.has(channel)) { return }
     this.channels.get(channel).clearVirtualMessages()
     debug("clear status message for channel %s", channel)
-    this.emit("update")
+    this._emitUpdate()
   }
   // TODO (2023-08-07): emit event
   setTopic(topic, channel, cb) {
