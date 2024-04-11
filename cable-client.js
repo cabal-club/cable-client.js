@@ -552,10 +552,10 @@ class CableClient extends EventEmitter {
 
   // we received notice of a new channel, do cable-client book keeping and some protocol stuff
   // TODO (2023-08-09): hook up to future event like `this.core.on("new-channel")`
-  _handleNewChannel (channel, joined) {
-    if (this.channels.has(channel)) { return }
-    debug("handle new channel %s (joined %s)", channel, joined)
-    this._addChannel(channel)
+  _handleNewChannel (channel, joined, overrideRequests=false) {
+    if (this.channels.has(channel) && !overrideRequests) { return }
+    debug("handle new channel %s (joined %s) (overrideRequests %s)", channel, joined, overrideRequests)
+    this._addChannel(channel, joined)
     // request basic state for the channel such as its members and the current topic
     const stateReq = this.core.requestState(channel, DEFAULT_TTL, 1)
     // despite not having joined the channel, we make sure to requests some posts to make sure it has some backlog if we
@@ -712,9 +712,11 @@ class CableClient extends EventEmitter {
   join(channel, focus=true) {
     // already joined the channel, exit early
     if (this.channels.has(channel) && this.channels.get(channel).joined) { return }
-    debug("join channel %s", channel)
-    this._addChannel(channel, true)
     // TODO (2024-04-03): replace channel time range request on newly joined channel with a ctr using policy.JOINED's params
+    // fire off channel time range + channel state requests if necessary
+    this._handleNewChannel(channel, true, true)
+    this.channels.get(channel).join()
+    debug("join channel %s", channel)
     if (focus) { this.focus(channel) }
     this.core.join(channel)
 
