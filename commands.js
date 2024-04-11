@@ -513,7 +513,6 @@ function flagCmd (cmd, cabal, res, arg) {
       break
     case "mod":
       role = (type === "add") ? constants.MOD_FLAG : constants.USER_FLAG
-      res.info(`assign role ${role}`)
       cabal.core.assignRole(id, channel, timestamp, role, reason, privacy, () => {
         if (type === "add") {
           res.info(`${peerName} was assigned role mod`)
