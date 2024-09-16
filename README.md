@@ -72,7 +72,7 @@ client.createCabal()
 [`CableClient`](https://github.com/cabal-club/cable-client.js/blob/master/cable-client.js) and
 [`ChannelDetails`](https://github.com/cabal-club/cable-client.js/blob/master/src/channel-details.js).
 
-[`CableClient`](https://github.com/cabal-club/cable-client.js/blob/master/src/cabal-details.js) is the
+[`CableClient`](https://github.com/cabal-club/cable-client.js/blob/master/cable-client.js) is the
 instance that clients mostly operate on, as it encapsulates all information for a particular cabal. (joined channels,
 users in that channel, the topic). It also emits events.
 
