@@ -35,7 +35,7 @@ Some of its features:
 
 ## Usage
 
-See [`cabal@cable`](https://github.com/cabal-club/cabal-cli/) for an example client implementation.
+See [`cabal@cable`](https://github.com/cabal-club/cabal-cli/tree/cable-subj-mod-compat) for an example client implementation.
 
 ```js
 // shim.js is an adaptor between the new cable-client (which has slight changes) and the old cabal-client api
@@ -69,17 +69,17 @@ client.createCabal()
 ## Concepts
 
 `cable-client` has **two abstractions**:
-[`CableClient`](https://github.com/cabal-club/cable-client.js/blob/master/cable-client.js) and
-[`ChannelDetails`](https://github.com/cabal-club/cable-client.js/blob/master/src/channel-details.js).
+[`CableClient`](https://github.com/cabal-club/cable-client.js/blob/main/cable-client.js) and
+[`ChannelDetails`](https://github.com/cabal-club/cable-client.js/blob/main/src/channel-details.js).
 
-[`CableClient`](https://github.com/cabal-club/cable-client.js/blob/master/src/cabal-details.js) is the
+[`CableClient`](https://github.com/cabal-club/cable-client.js/blob/main/src/cabal-details.js) is the
 instance that clients mostly operate on, as it encapsulates all information for a particular cabal. (joined channels,
 users in that channel, the topic). It also emits events.
 
 When a change has happened, a `CableClient` instance will emit an `update` event. When a client receives this
 event, they should update their state & rerender. 
 
-[`ChannelDetails`](https://github.com/cabal-club/cable-client.js/blob/master/src/channel-details.js)
+[`ChannelDetails`](https://github.com/cabal-club/cable-client.js/blob/main/src/channel-details.js)
 encapsulates everything channels (mentions in that channel, status messages for the channel
 (like having called a command eg `/names`, when it was last read, if it's currently being
 viewed, if it's joined and so on). It also has a barebones implementation for virtual channels,
@@ -95,7 +95,7 @@ const client = new Client({..})
 ```
 
 The shim acts as a translation layer between the two APIs as well as a guide to what has been
-changed, [check out the code](https://github.com/cabal-club/cable-client.js/blob/master/shim.js).
+changed, [check out the code](https://github.com/cabal-club/cable-client.js/blob/main/shim.js).
 
 ## Install
 
